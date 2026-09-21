@@ -1,6 +1,7 @@
 import React from 'react';
 import { HardDrive, Plus, FileText, Server, RefreshCw } from 'lucide-react';
 import { OverviewStats } from '../types';
+import { APP_VERSION, APP_RELEASE_TITLE } from '../version';
 
 interface NavbarProps {
   stats: OverviewStats | null;
@@ -30,8 +31,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-lg font-bold text-white tracking-tight">Drive Tracker</h1>
-              <span className="px-2 py-0.5 text-xs font-medium rounded-md bg-sky-950 text-sky-400 border border-sky-800/60 font-mono">
-                v1.0
+              <span
+                className="px-2 py-0.5 text-xs font-medium rounded-md bg-sky-950 text-sky-400 border border-sky-800/60 font-mono cursor-help"
+                title={`Drive Tracker ${APP_RELEASE_TITLE}`}
+              >
+                v{APP_VERSION}
               </span>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block">

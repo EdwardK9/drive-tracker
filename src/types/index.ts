@@ -44,6 +44,15 @@ export interface WarrantyInfo {
   label: string;
 }
 
+export interface RuntimeWearInfo {
+  phase: 'burn_in' | 'prime' | 'mature' | 'wear_out';
+  phaseLabel: string;
+  poh: number;
+  progressPercent: number;
+  equivalent247Years: number;
+  description: string;
+}
+
 export interface DriveAgeInfo {
   manufactureDate: string;
   ageYears: number;
@@ -51,6 +60,8 @@ export interface DriveAgeInfo {
   formattedAge: string;
   totalCalendarHours: number;
   dutyCyclePercent: number;
+  shelfProfile: string;
+  shelfAdvice: string;
 }
 
 export interface DriveRiskAssessment {
@@ -60,6 +71,7 @@ export interface DriveRiskAssessment {
   riskTitle: string;
   riskDescription: string;
   bathtubProgress: number;
+  runtimeWear: RuntimeWearInfo;
 }
 
 export interface Drive {

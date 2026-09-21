@@ -104,6 +104,50 @@ export async function deleteReceipt(receiptId: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete receipt');
 }
 
+export async function parseCrystalDiskScreenshotApi(
+  fileOrBase64: File | string,
+  mimeType: string = 'image/png'
+): Promise<{
+  parsed: ParsedCrystalDiskInfo;
+  rawText: string;
+  matchedDrive: Drive | null;
+}> {
+  let res: Response;
+  if (typeof fileOrBase64 === 'string') {
+    res = await fetch('/api/parse-crystaldisk-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: fileOrBase64, mimeType })
+    });
+  } else {
+    const formData = new FormData();
+    formData.append('screenshot', fileOrBase64);
+    res = await fetch('/api/parse-crystaldisk-image', {
+      method: 'POST',
+      body: formData
+    });
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to parse CrystalDiskInfo screenshot');
+  }
+  return res.json();
+}
+
+export async function quickUpdateManufactureDate(driveId: string, manufactureDate: string | null): Promise<Drive> {
+  const res = await fetch(`/api/drives/${driveId}/manufacture-date`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ manufacture_date: manufactureDate })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update manufacture date');
+  }
+  return res.json();
+}
+
 export async function importBackup(backupData: any): Promise<any> {
   const res = await fetch('/api/import', {
     method: 'POST',

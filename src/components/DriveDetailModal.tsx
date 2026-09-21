@@ -7,8 +7,9 @@ import {
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, AreaChart, Area
 } from 'recharts';
-import { Drive, DriveDetail, CrystalDiskLog, DriveReceipt } from '../types';
+import { Drive, DriveDetail, CrystalDiskLog, DriveReceipt, RuntimeWearInfo } from '../types';
 import { fetchDriveDetail, deleteDrive, uploadReceipt, deleteReceipt, deleteCrystalDiskLog } from '../api';
+import { QuickSetDomModal } from './QuickSetDomModal';
 
 interface DriveDetailModalProps {
   driveId: string | null;
@@ -38,6 +39,7 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [copiedSerial, setCopiedSerial] = useState(false);
+  const [isQuickDomOpen, setIsQuickDomOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadData = async () => {
@@ -360,34 +362,227 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Section: Drive Age & Failure Probability (Bathtub Curve) */}
+                  {/* Section A: Active Mechanical Runtime & Bathtub Curve (Strictly Power-On Hours) */}
                   <div className="p-5 rounded-xl bg-slate-800/80 border border-slate-700/80 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <h3 className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1.5">
-                        <Calendar className="w-4 h-4 text-amber-400" />
-                        <span>Drive Age & Bathtub Curve Failure Risk</span>
-                      </h3>
+                    {(() => {
+                      const runtimeWear: RuntimeWearInfo = detail.risk_assessment?.runtimeWear || {
+                        poh: currentPoh,
+                        equivalent247Years: +(currentPoh / 8760).toFixed(1),
+                        phase: currentPoh < 2000 ? 'burn_in' : currentPoh <= 30000 ? 'prime' : currentPoh <= 43800 ? 'mature' : 'wear_out',
+                        phaseLabel: currentPoh < 2000 ? 'Infant / Burn-in' : currentPoh <= 30000 ? 'Prime Operating' : currentPoh <= 43800 ? 'Mature Wear' : 'Wear-out Zone',
+                        progressPercent: Math.min(100, Math.round((currentPoh / 43800) * 100)),
+                        description: `Drive has logged ${currentPoh.toLocaleString()} power-on hours.`
+                      };
 
-                      {detail.risk_assessment && (
-                        <div className="flex items-center space-x-2">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-bold font-mono border ${
-                              detail.risk_assessment.riskLevel === 'critical'
-                                ? 'bg-rose-950/90 text-rose-300 border-rose-800'
-                                : detail.risk_assessment.riskLevel === 'elevated'
-                                ? 'bg-amber-950/90 text-amber-300 border-amber-800'
-                                : detail.risk_assessment.riskLevel === 'moderate'
-                                ? 'bg-sky-950/90 text-sky-300 border-sky-800'
-                                : 'bg-emerald-950/90 text-emerald-300 border-emerald-800'
+                      return (
+                        <>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <h3 className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1.5">
+                                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                                <span>Active Mechanical Runtime &amp; Bathtub Curve</span>
+                              </h3>
+                              <p className="text-[11px] text-slate-400 mt-0.5">
+                                Position on the empirical hardware reliability curve, measured strictly from verified SMART Power-On Hours (POH).
+                              </p>
+                            </div>
+
+                            <div className="flex items-center space-x-2">
+                              <span
+                                className={`px-3 py-1 rounded-full text-xs font-bold font-mono border ${
+                                  runtimeWear.phase === 'wear_out'
+                                    ? 'bg-rose-950/90 text-rose-300 border-rose-800'
+                                    : runtimeWear.phase === 'mature'
+                                    ? 'bg-amber-950/90 text-amber-300 border-amber-800'
+                                    : runtimeWear.phase === 'burn_in'
+                                    ? 'bg-sky-950/90 text-sky-300 border-sky-800'
+                                    : 'bg-emerald-950/90 text-emerald-300 border-emerald-800'
+                                }`}
+                              >
+                                {runtimeWear.phaseLabel.toUpperCase()} ({runtimeWear.phase === 'prime' ? 'OPTIMAL' : runtimeWear.phase === 'wear_out' ? 'HIGH WEAR' : 'EVALUATE'})
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 4-Stat Runtime Breakdown */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60">
+                              <span className="text-slate-500 block text-[10px] uppercase font-sans">Active Spindle Hours</span>
+                              <span className="text-emerald-400 font-bold text-sm mt-0.5 block">
+                                {currentPoh.toLocaleString()} hrs
+                              </span>
+                              <span className="text-[10px] text-slate-400 mt-0.5 block font-sans">
+                                SMART power-on telemetry
+                              </span>
+                            </div>
+
+                            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60">
+                              <span className="text-slate-500 block text-[10px] uppercase font-sans">Continuous 24/7 Equivalent</span>
+                              <span className="text-white font-bold text-sm mt-0.5 block">
+                                {runtimeWear.equivalent247Years} yrs
+                              </span>
+                              <span className="text-[10px] text-slate-400 mt-0.5 block font-sans">
+                                Non-stop spinning equiv
+                              </span>
+                            </div>
+
+                            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60">
+                              <span className="text-slate-500 block text-[10px] uppercase font-sans">Power Cycle Count</span>
+                              <span className="text-sky-300 font-bold text-sm mt-0.5 block">
+                                {currentPoc} count
+                              </span>
+                              <span className="text-[10px] text-slate-400 mt-0.5 block font-sans">
+                                Start/stop mechanical events
+                              </span>
+                            </div>
+
+                            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60">
+                              <span className="text-slate-500 block text-[10px] uppercase font-sans">Spindle Lifecycle Phase</span>
+                              <span className="text-emerald-300 font-bold text-sm mt-0.5 block truncate" title={runtimeWear.phaseLabel}>
+                                {runtimeWear.phaseLabel}
+                              </span>
+                              <span className="text-[10px] text-slate-400 mt-0.5 block font-sans">
+                                {runtimeWear.phase === 'prime' ? 'Lowest AFR (~0.8-1.2%)' : runtimeWear.phase === 'burn_in' ? 'Early burn-in (~2-3%)' : runtimeWear.phase === 'mature' ? 'Mature wear (~1.5-2.5%)' : 'Accelerated AFR (>5%)'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Visual Bathtub Curve Track */}
+                          <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/70 space-y-2.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-300 font-semibold flex items-center space-x-1.5">
+                                <TrendingUp className="w-3.5 h-3.5 text-sky-400" />
+                                <span>Spindle Wear Progress Along Bathtub Baseline (5-Yr 24/7 = 43,800 POH)</span>
+                              </span>
+                              <span className="text-sky-400 font-mono text-[11px]">
+                                {runtimeWear.progressPercent}% of 5-Yr Continuous Baseline
+                              </span>
+                            </div>
+
+                            <div className="relative pt-2 pb-1">
+                              {/* Track Zones */}
+                              <div className="h-3.5 rounded-full overflow-hidden flex w-full bg-slate-950 border border-slate-800">
+                                <div
+                                  style={{ width: '10%' }}
+                                  className="bg-sky-500/30 border-r border-slate-900"
+                                  title="Infant / Burn-in (< 2,000 hrs / 0.2 yr)"
+                                />
+                                <div
+                                  style={{ width: '60%' }}
+                                  className="bg-emerald-500/30 border-r border-slate-900"
+                                  title="Prime Operating Phase (Lowest Failure Rate: 2,000 - 30,000 hrs / 3.4 yrs)"
+                                />
+                                <div
+                                  style={{ width: '18%' }}
+                                  className="bg-amber-500/30 border-r border-slate-900"
+                                  title="Mature Phase (Wear onset: 30,000 - 43,800 hrs / 5 yrs)"
+                                />
+                                <div
+                                  style={{ width: '12%' }}
+                                  className="bg-rose-500/30"
+                                  title="Wear-out Zone (Elevated Failure Rate: > 43,800 hrs continuous)"
+                                />
+                              </div>
+
+                              {/* Position Needle / Indicator */}
+                              <div
+                                className="absolute top-1 -translate-x-1/2 flex flex-col items-center transition-all pointer-events-none"
+                                style={{ left: `${Math.max(2, Math.min(98, runtimeWear.progressPercent))}%` }}
+                              >
+                                <div className="w-3.5 h-3.5 rounded-full bg-sky-400 border-2 border-white shadow-md shadow-sky-500/50 animate-pulse" />
+                                <div className="w-0.5 h-4 bg-sky-400/80" />
+                              </div>
+                            </div>
+
+                            {/* Zone Labels */}
+                            <div className="grid grid-cols-4 text-[10px] text-slate-400 font-mono text-center pt-1 border-t border-slate-800/80">
+                              <div>
+                                <span className="text-sky-300 font-semibold block">Infant / Burn-in</span>
+                                <span className="text-slate-500">&lt; 2,000 POH</span>
+                              </div>
+                              <div>
+                                <span className="text-emerald-300 font-semibold block">Prime Operating</span>
+                                <span className="text-slate-500">2k – 30k POH</span>
+                              </div>
+                              <div>
+                                <span className="text-amber-300 font-semibold block">Mature Wear</span>
+                                <span className="text-slate-500">30k – 43.8k POH</span>
+                              </div>
+                              <div>
+                                <span className="text-rose-300 font-semibold block">Wear-Out Zone</span>
+                                <span className="text-slate-500">&gt; 43.8k POH</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Runtime Wear Status Assessment */}
+                          <div
+                            className={`p-3.5 rounded-xl border text-xs leading-relaxed flex items-start space-x-3 ${
+                              runtimeWear.phase === 'wear_out'
+                                ? 'bg-rose-950/40 border-rose-800/80 text-rose-200'
+                                : runtimeWear.phase === 'mature'
+                                ? 'bg-amber-950/40 border-amber-800/80 text-amber-200'
+                                : runtimeWear.phase === 'burn_in'
+                                ? 'bg-sky-950/40 border-sky-800/80 text-sky-200'
+                                : 'bg-emerald-950/40 border-emerald-800/80 text-emerald-200'
                             }`}
                           >
-                            {detail.risk_assessment.phaseLabel} ({detail.risk_assessment.riskLevel.toUpperCase()} RISK)
-                          </span>
-                        </div>
+                            <div className="mt-0.5 shrink-0">
+                              {runtimeWear.phase === 'wear_out' ? (
+                                <AlertTriangle className="w-4 h-4 text-rose-400" />
+                              ) : runtimeWear.phase === 'mature' ? (
+                                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                              ) : (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                              )}
+                            </div>
+                            <div>
+                              <span className="font-bold block mb-0.5">
+                                {runtimeWear.phase === 'prime'
+                                  ? `Optimal Reliability: ${currentPoh.toLocaleString()} POH (~${runtimeWear.equivalent247Years} yr 24/7 equivalent)`
+                                  : runtimeWear.phase === 'burn_in'
+                                  ? `Infant Stage: ${currentPoh.toLocaleString()} POH`
+                                  : runtimeWear.phase === 'mature'
+                                  ? `Mature Operating Phase: ${currentPoh.toLocaleString()} POH`
+                                  : `Spindle Wear-out Zone: ${currentPoh.toLocaleString()} POH`}
+                              </span>
+                              <span className="text-slate-300">
+                                {runtimeWear.description}
+                              </span>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Section B: Calendar Shelf Age & Duty Cycle (Strictly Manufacture Date / DOM) */}
+                  <div className="p-5 rounded-xl bg-slate-800/80 border border-slate-700/80 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1.5">
+                          <Calendar className="w-4 h-4 text-amber-400" />
+                          <span>Calendar Shelf Age &amp; Operational Duty Cycle</span>
+                        </h3>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Calculated from the Date of Manufacture (DOM) printed on the physical drive chassis label.
+                        </p>
+                      </div>
+
+                      {detail.manufacture_date && (
+                        <button
+                          id="edit-dom-btn"
+                          type="button"
+                          onClick={() => setIsQuickDomOpen(true)}
+                          className="px-2.5 py-1 text-xs rounded-lg bg-slate-700/80 hover:bg-slate-700 text-slate-200 border border-slate-600 transition-colors flex items-center space-x-1 self-start sm:self-auto"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>Edit DOM</span>
+                        </button>
                       )}
                     </div>
 
-                    {detail.manufacture_date && detail.age_info && detail.risk_assessment ? (
+                    {detail.manufacture_date && detail.age_info ? (
                       <div className="space-y-4">
                         {/* 4-Stat breakdown */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
@@ -397,12 +592,12 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
                               {detail.manufacture_date}
                             </span>
                             <span className="text-[10px] text-slate-400 mt-0.5 block font-sans">
-                              Physical label stamp
+                              Physical chassis label
                             </span>
                           </div>
 
                           <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60">
-                            <span className="text-slate-500 block text-[10px] uppercase font-sans">Physical Age</span>
+                            <span className="text-slate-500 block text-[10px] uppercase font-sans">Physical Calendar Age</span>
                             <span className="text-white font-bold text-sm mt-0.5 block">
                               {detail.age_info.formattedAge}
                             </span>
@@ -417,118 +612,31 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
                               {detail.age_info.dutyCyclePercent}% Active
                             </span>
                             <span className="text-[10px] text-slate-400 mt-0.5 block font-sans">
-                              {currentPoh.toLocaleString()}h runtime / {detail.age_info.totalCalendarHours.toLocaleString()}h
+                              {currentPoh.toLocaleString()}h / {detail.age_info.totalCalendarHours.toLocaleString()}h cal life
                             </span>
                           </div>
 
                           <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60">
-                            <span className="text-slate-500 block text-[10px] uppercase font-sans">Bathtub Phase</span>
-                            <span className="text-emerald-300 font-bold text-sm mt-0.5 block truncate" title={detail.risk_assessment.phaseLabel}>
-                              {detail.risk_assessment.phaseLabel}
+                            <span className="text-slate-500 block text-[10px] uppercase font-sans">Operational Profile</span>
+                            <span className="text-emerald-300 font-bold text-sm mt-0.5 block truncate" title={detail.age_info.shelfProfile || 'Active'}>
+                              {detail.age_info.shelfProfile || 'Standard Operation'}
                             </span>
                             <span className="text-[10px] text-slate-400 mt-0.5 block font-sans">
-                              Expected AFR: {detail.risk_assessment.phase === 'prime' ? '~1.0%' : detail.risk_assessment.phase === 'burn_in' ? '~2.5%' : detail.risk_assessment.phase === 'mature' ? '~2.0%' : '~5-8%+'}
+                              Duty cycle profile
                             </span>
                           </div>
                         </div>
 
-                        {/* Visual Bathtub Curve Lifecycle Diagram */}
-                        <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/70 space-y-2.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-slate-300 font-semibold flex items-center space-x-1.5">
-                              <TrendingUp className="w-3.5 h-3.5 text-sky-400" />
-                              <span>Hard Drive Bathtub Curve Lifecycle Position</span>
+                        {/* Shelf Advice Callout Banner */}
+                        <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-xs leading-relaxed flex items-start space-x-3">
+                          <CheckCircle2 className="w-4 h-4 text-sky-400 mt-0.5 shrink-0" />
+                          <div className="space-y-1">
+                            <span className="font-bold text-white block">
+                              Storage &amp; Duty Cycle Insight:
                             </span>
-                            <span className="text-sky-400 font-mono text-[11px]">
-                              {detail.risk_assessment.bathtubProgress}% of 5-Yr Baseline
-                            </span>
-                          </div>
-
-                          {/* Multi-segment Bathtub Curve Track */}
-                          <div className="relative pt-2 pb-1">
-                            {/* Track Zones */}
-                            <div className="h-3.5 rounded-full overflow-hidden flex w-full bg-slate-950 border border-slate-800">
-                              <div
-                                style={{ width: '20%' }}
-                                className="bg-sky-500/30 border-r border-slate-900"
-                                title="Burn-in Phase (< 2,000 hrs / 4 mos)"
-                              />
-                              <div
-                                style={{ width: '50%' }}
-                                className="bg-emerald-500/30 border-r border-slate-900"
-                                title="Prime Phase (Lowest Failure Rate: 2k - 30k hrs / 3.5 yrs)"
-                              />
-                              <div
-                                style={{ width: '15%' }}
-                                className="bg-amber-500/30 border-r border-slate-900"
-                                title="Mature Phase (Wear onset: 30k - 43.8k hrs / 3.5 - 5 yrs)"
-                              />
-                              <div
-                                style={{ width: '15%' }}
-                                className="bg-rose-500/30"
-                                title="Wear-out Phase (Accelerated Failure Rate: > 43.8k hrs / > 5 yrs)"
-                              />
-                            </div>
-
-                            {/* Position Needle / Indicator */}
-                            <div
-                              className="absolute top-1 -translate-x-1/2 flex flex-col items-center transition-all pointer-events-none"
-                              style={{ left: `${Math.max(2, Math.min(98, detail.risk_assessment.bathtubProgress))}%` }}
-                            >
-                              <div className="w-3.5 h-3.5 rounded-full bg-sky-400 border-2 border-white shadow-md shadow-sky-500/50 animate-pulse" />
-                              <div className="w-0.5 h-4 bg-sky-400/80" />
-                            </div>
-                          </div>
-
-                          {/* Zone Labels */}
-                          <div className="grid grid-cols-4 text-[10px] text-slate-400 font-mono text-center pt-1 border-t border-slate-800/80">
-                            <div>
-                              <span className="text-sky-300 font-semibold block">Infant / Burn-in</span>
-                              <span className="text-slate-500">&lt; 2,000 POH</span>
-                            </div>
-                            <div>
-                              <span className="text-emerald-300 font-semibold block">Prime Operating</span>
-                              <span className="text-slate-500">2k – 30k POH</span>
-                            </div>
-                            <div>
-                              <span className="text-amber-300 font-semibold block">Mature Wear</span>
-                              <span className="text-slate-500">30k – 43.8k POH</span>
-                            </div>
-                            <div>
-                              <span className="text-rose-300 font-semibold block">Wear-Out Zone</span>
-                              <span className="text-slate-500">&gt; 43.8k POH / &gt;5y</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Failure Assessment & Maintenance Guidance */}
-                        <div
-                          className={`p-3.5 rounded-xl border text-xs leading-relaxed flex items-start space-x-3 ${
-                            detail.risk_assessment.riskLevel === 'critical'
-                              ? 'bg-rose-950/40 border-rose-800/80 text-rose-200'
-                              : detail.risk_assessment.riskLevel === 'elevated'
-                              ? 'bg-amber-950/40 border-amber-800/80 text-amber-200'
-                              : detail.risk_assessment.riskLevel === 'moderate'
-                              ? 'bg-sky-950/40 border-sky-800/80 text-sky-200'
-                              : 'bg-emerald-950/40 border-emerald-800/80 text-emerald-200'
-                          }`}
-                        >
-                          <div className="mt-0.5 shrink-0">
-                            {detail.risk_assessment.riskLevel === 'critical' ? (
-                              <AlertTriangle className="w-4 h-4 text-rose-400" />
-                            ) : detail.risk_assessment.riskLevel === 'elevated' ? (
-                              <AlertTriangle className="w-4 h-4 text-amber-400" />
-                            ) : (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            )}
-                          </div>
-                          <div>
-                            <span className="font-bold block mb-0.5">
-                              {detail.risk_assessment.riskTitle}
-                            </span>
-                            <span className="text-slate-300">
-                              {detail.risk_assessment.riskDescription}
-                            </span>
+                            <p className="text-slate-300">
+                              {detail.age_info.shelfAdvice || 'Calendar age and power-on runtime are tracked independently.'}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -537,14 +645,16 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
                         <div className="text-xs text-slate-300">
                           <p className="font-semibold text-white mb-0.5">Manufacture Date (DOM) Not Recorded</p>
                           <p className="text-slate-400">
-                            Enter the Date of Manufacture printed on the drive's physical sticker (e.g. &ldquo;DOM: 15 APR 2021&rdquo;) to calculate exact disk age, active duty cycle, and bathtub curve failure probability.
+                            Enter the Date of Manufacture printed on the drive's physical sticker (e.g. &ldquo;DOM: 21DEC2019&rdquo;) to calculate exact physical age and duty cycle without conflating calendar age with spindle hours.
                           </p>
                         </div>
                         <button
-                          onClick={() => onEdit(detail)}
+                          id="set-dom-btn"
+                          type="button"
+                          onClick={() => setIsQuickDomOpen(true)}
                           className="px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-semibold text-xs transition-colors shrink-0 flex items-center space-x-1.5"
                         >
-                          <Edit2 className="w-3.5 h-3.5" />
+                          <Calendar className="w-3.5 h-3.5" />
                           <span>Set Manufacture Date</span>
                         </button>
                       </div>
@@ -1118,6 +1228,17 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
           ) : null}
         </div>
       </div>
+
+      {/* Quick Set Manufacture Date Modal (stacked in front at z-[80]) */}
+      <QuickSetDomModal
+        isOpen={isQuickDomOpen}
+        onClose={() => setIsQuickDomOpen(false)}
+        drive={detail}
+        onSaved={(upd) => {
+          setDetail((prev) => (prev ? { ...prev, ...upd } : null));
+          loadData();
+        }}
+      />
     </div>
   );
 };

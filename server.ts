@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { db, initDatabase, DATA_DIR } from './server/db.js';
 import { parseCrystalDiskInfo } from './server/crystalDiskParser.js';
+import { parseCrystalDiskScreenshot } from './server/crystalDiskImageParser.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,6 +48,15 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Static uploads serving
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+// App version endpoint
+app.get('/api/version', (_req, res) => {
+  res.json({
+    name: 'Drive Tracker',
+    version: '1.1.0',
+    updatedAt: '2026-09-21',
+  });
+});
+
 // Helper: Calculate warranty expiration date
 function calculateWarrantyExpiry(purchaseDateStr: string, months: number): string {
   if (!purchaseDateStr) return '';
@@ -84,111 +94,142 @@ function calculateDriveAgeAndRisk(
   healthStatus: string = 'Good',
   smartAttributes: any[] = []
 ) {
-  if (!manufactureDateStr) {
-    return {
-      age_info: null,
-      risk_assessment: null
-    };
-  }
-
-  const mfgDate = new Date(manufactureDateStr);
-  if (isNaN(mfgDate.getTime())) {
-    return { age_info: null, risk_assessment: null };
-  }
-
-  const now = new Date();
-  const diffMs = now.getTime() - mfgDate.getTime();
-  const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-  const totalCalendarHours = diffDays * 24;
-
-  const ageYears = +(diffDays / 365.25).toFixed(1);
-  const ageMonths = Math.floor(diffDays / 30.4375);
-
-  let formattedAge = '';
-  const yearsPart = Math.floor(ageMonths / 12);
-  const monthsPart = ageMonths % 12;
-  if (yearsPart > 0) {
-    formattedAge = `${yearsPart} yr${yearsPart > 1 ? 's' : ''}${monthsPart > 0 ? `, ${monthsPart} mo${monthsPart > 1 ? 's' : ''}` : ''}`;
-  } else {
-    formattedAge = `${monthsPart} month${monthsPart === 1 ? '' : 's'}`;
-  }
-
-  // Active duty cycle (% of elapsed physical calendar hours spent powered on)
-  const dutyCyclePercent = totalCalendarHours > 0
-    ? Math.min(100, Math.round((currentPoh / totalCalendarHours) * 100))
-    : 100;
-
   // Check for critical SMART attributes (reallocated or pending sectors)
   const reallocated = smartAttributes.find((a: any) => a.id === '05' || a.name?.toLowerCase().includes('reallocated'));
   const pending = smartAttributes.find((a: any) => a.id === 'C5' || a.name?.toLowerCase().includes('pending'));
   const hasBadSectors = (reallocated && parseInt(reallocated.rawValue || '0', 16) > 0) ||
                         (pending && parseInt(pending.rawValue || '0', 16) > 0);
 
-  // Bathtub Curve & Risk Assessment
-  let phase: 'burn_in' | 'prime' | 'mature' | 'wear_out' = 'prime';
-  let phaseLabel = 'Prime Operational Phase';
-  let riskLevel: 'low' | 'moderate' | 'elevated' | 'critical' = 'low';
-  let riskTitle = 'Lowest Statistical Failure Rate';
-  let riskDescription = 'Drive is in the optimal bathtub curve sweet spot with the lowest historical failure rates across enterprise fleet data.';
-  let bathtubProgress = 35;
+  // 1. RUNTIME WEAR (Decoupled & strictly based on active mechanical Power-On Hours)
+  // Baseline: 43,800 POH (5 years of continuous 24/7 spinning)
+  let runtimePhase: 'burn_in' | 'prime' | 'mature' | 'wear_out' = 'prime';
+  let runtimePhaseLabel = 'Prime Operational Phase (2k – 30k hrs)';
+  let runtimeProgress = 25; // 0 to 100 on standard 5-year 43,800 POH baseline
+  const equivalent247Years = +(currentPoh / 8760).toFixed(1);
+  let runtimeDescription = '';
 
-  if (ageYears < 0.35 || currentPoh < 2000) {
-    phase = 'burn_in';
-    phaseLabel = 'Infant / Burn-in Phase';
-    bathtubProgress = Math.min(22, Math.round((currentPoh / 2000) * 22));
-    riskLevel = 'moderate';
-    riskTitle = 'Early Burn-in Period';
-    riskDescription = 'Early life burn-in phase. Manufacturing defects typically surface during early operational hours. Run extended SMART tests and parity scrubs.';
-  } else if (ageYears >= 5.0 || currentPoh >= 43800) {
-    phase = 'wear_out';
-    phaseLabel = 'Aging Wear-out Phase (>5 Yrs)';
-    bathtubProgress = Math.min(100, 75 + Math.round(((ageYears - 5) / 3) * 25));
-    riskLevel = 'elevated';
-    riskTitle = 'Elevated Age Risk (>5 Years)';
-    riskDescription = 'Beyond standard 5-year enterprise design life (40,000+ hrs). Mechanical bearing and lubricant degradation statistically increases failure probability. Ensure RAID/ZFS redundancy.';
-  } else if (ageYears >= 3.5 || currentPoh >= 30000) {
-    phase = 'mature';
-    phaseLabel = 'Mature Operating Phase';
-    bathtubProgress = 55 + Math.round(((ageYears - 3.5) / 1.5) * 20);
-    riskLevel = 'moderate';
-    riskTitle = 'Mature Disk (Normal Wear)';
-    riskDescription = 'Approaching standard warranty threshold. Operating smoothly, but mechanical aging is progressing. Continue routine monthly parity scrubs.';
+  if (currentPoh < 2000) {
+    runtimePhase = 'burn_in';
+    runtimePhaseLabel = 'Infant / Burn-in (<2,000 hrs)';
+    runtimeProgress = Math.min(15, Math.round((currentPoh / 2000) * 15));
+    runtimeDescription = `Only ${currentPoh.toLocaleString()} power-on hours logged. Manufacturing defects typically surface during early burn-in hours. Extended parity scrubs recommended.`;
+  } else if (currentPoh >= 43800) {
+    runtimePhase = 'wear_out';
+    runtimePhaseLabel = 'High-Hour Wear-out Zone (>43,800 hrs)';
+    runtimeProgress = Math.min(100, 85 + Math.round(((currentPoh - 43800) / 20000) * 15));
+    runtimeDescription = `Exceeded 43,800 active operational hours (~5.0+ years of 24/7 spinning). Spindle bearing wear and actuator fatigue are elevated. Maintain standby replacement drives.`;
+  } else if (currentPoh >= 30000) {
+    runtimePhase = 'mature';
+    runtimePhaseLabel = 'Mature Operating Phase (30k – 43.8k hrs)';
+    runtimeProgress = 65 + Math.round(((currentPoh - 30000) / 13800) * 20);
+    runtimeDescription = `${currentPoh.toLocaleString()} hours active runtime (~${equivalent247Years} yrs continuous). Normal enterprise wear progression; keep monthly parity scrubs active.`;
   } else {
-    phase = 'prime';
-    phaseLabel = 'Prime Operational Phase';
-    bathtubProgress = 25 + Math.round(((ageYears - 0.35) / 3.15) * 25);
-    riskLevel = 'low';
-    riskTitle = 'Lowest Statistical Failure Rate';
-    riskDescription = 'Drive is in the optimal bathtub curve sweet spot with the lowest historical failure rates across enterprise fleet data.';
+    runtimePhase = 'prime';
+    runtimePhaseLabel = 'Prime Operating Phase (2k – 30k hrs)';
+    runtimeProgress = 15 + Math.round(((currentPoh - 2000) / 28000) * 50);
+    runtimeDescription = `${currentPoh.toLocaleString()} hours logged (~${equivalent247Years} yrs continuous 24/7 spinning). Drive is operating in the statistical sweet spot with the lowest annualized failure rates (<1.0%).`;
   }
 
-  // Critical overrides if SMART detected bad health or reallocated sectors
+  // 2. CALENDAR AGE & DUTY CYCLE (Physical age since factory manufacture)
+  let ageInfo = null;
+  if (manufactureDateStr) {
+    const mfgDate = new Date(manufactureDateStr);
+    if (!isNaN(mfgDate.getTime())) {
+      const now = new Date();
+      const diffMs = now.getTime() - mfgDate.getTime();
+      const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+      const totalCalendarHours = diffDays * 24;
+      const ageYears = +(diffDays / 365.25).toFixed(1);
+      const ageMonths = Math.floor(diffDays / 30.4375);
+
+      const yearsPart = Math.floor(ageMonths / 12);
+      const monthsPart = ageMonths % 12;
+      const formattedAge =
+        yearsPart > 0
+          ? `${yearsPart} yr${yearsPart > 1 ? 's' : ''}${monthsPart > 0 ? `, ${monthsPart} mo${monthsPart > 1 ? 's' : ''}` : ''}`
+          : `${monthsPart} month${monthsPart === 1 ? '' : 's'}`;
+
+      const dutyCyclePercent =
+        totalCalendarHours > 0
+          ? Math.min(100, Math.round((currentPoh / totalCalendarHours) * 100))
+          : 100;
+
+      let shelfProfile = 'Standard Duty';
+      let shelfAdvice = '';
+
+      if (dutyCyclePercent <= 25 && ageYears >= 2.5) {
+        shelfProfile = 'Cold Storage / Low-Duty Spare';
+        shelfAdvice = `Low Duty Cycle (${dutyCyclePercent}% Active) — Drive spent ~${100 - dutyCyclePercent}% of its calendar life powered off or in storage. Because active runtime is only ${currentPoh.toLocaleString()} hrs, mechanical spindle wear is minimal despite the ${formattedAge} calendar age. Standard advice: run monthly parity scrubs and keep regular backups.`;
+      } else if (dutyCyclePercent >= 75) {
+        shelfProfile = 'Continuous 24/7 Server Array';
+        shelfAdvice = `High Duty Cycle (${dutyCyclePercent}% Active) — Drive ran almost continuously since factory manufacture. Spindle runtime directly tracks calendar age.`;
+      } else {
+        shelfProfile = 'Intermittent / Mixed Workload';
+        shelfAdvice = `Moderate Duty Cycle (${dutyCyclePercent}% Active) — Mixed operational history between active arrays and powered-off storage.`;
+      }
+
+      ageInfo = {
+        manufactureDate: manufactureDateStr,
+        ageYears,
+        ageMonths,
+        formattedAge,
+        totalCalendarHours,
+        dutyCyclePercent,
+        shelfProfile,
+        shelfAdvice
+      };
+    }
+  }
+
+  // 3. OVERALL RELIABILITY & FAILURE RISK ASSESSMENT
+  let riskLevel: 'low' | 'moderate' | 'elevated' | 'critical' = 'low';
+  let riskTitle = 'Prime Reliability Window';
+  let riskDescription = runtimeDescription;
+
   if (hasBadSectors || healthStatus === 'Bad') {
     riskLevel = 'critical';
-    riskTitle = 'Critical Replacement Recommended';
-    riskDescription = 'Drive has sector reallocation or critical SMART warnings. Failures typically accelerate exponentially once bad sectors emerge.';
+    riskTitle = 'Critical - Sector Reallocation Detected';
+    riskDescription = 'Drive has sector reallocation or critical SMART warnings. Immediate replacement and data migration strongly recommended.';
   } else if (healthStatus === 'Caution') {
     riskLevel = 'elevated';
-    riskTitle = 'Caution - Monitor Closely';
-    riskDescription = 'Drive SMART state is flagged with caution. Back up data immediately and watch scrub logs.';
+    riskTitle = 'Caution - SMART Warning';
+    riskDescription = 'Drive SMART state is flagged with caution. Back up data immediately and monitor parity logs.';
+  } else if (runtimePhase === 'wear_out') {
+    riskLevel = 'elevated';
+    riskTitle = 'High Operating Hours (>43,800 hrs)';
+    riskDescription = 'Drive has accumulated over 43,800 hours of active mechanical runtime. Prepare a cold standby spare drive.';
+  } else if (runtimePhase === 'burn_in') {
+    riskLevel = 'moderate';
+    riskTitle = 'Early Burn-in Period';
+    riskDescription = 'Early operational hours (<2,000 hrs). Run burn-in tests and ensure initial parity sync succeeds.';
+  } else if (runtimePhase === 'mature') {
+    riskLevel = 'moderate';
+    riskTitle = 'Mature Operational Phase';
+    riskDescription = 'Approaching standard 5-year enterprise operating baseline. Operating reliably with normal mechanical aging.';
+  } else {
+    // Prime operational
+    riskLevel = 'low';
+    riskTitle = 'Lowest Statistical Failure Rate';
+    riskDescription = 'Drive is in the optimal bathtub curve sweet spot with low active hours and <1% annual historical failure rates.';
   }
 
   return {
-    age_info: {
-      manufactureDate: manufactureDateStr,
-      ageYears,
-      ageMonths,
-      formattedAge,
-      totalCalendarHours,
-      dutyCyclePercent
-    },
+    age_info: ageInfo,
     risk_assessment: {
-      phase,
-      phaseLabel,
+      phase: runtimePhase,
+      phaseLabel: runtimePhaseLabel,
       riskLevel,
       riskTitle,
       riskDescription,
-      bathtubProgress
+      bathtubProgress: runtimeProgress,
+      runtimeWear: {
+        phase: runtimePhase,
+        phaseLabel: runtimePhaseLabel,
+        poh: currentPoh,
+        progressPercent: runtimeProgress,
+        equivalent247Years,
+        description: runtimeDescription
+      }
     }
   };
 }
@@ -196,6 +237,11 @@ function calculateDriveAgeAndRisk(
 // ==========================================
 // API ROUTES
 // ==========================================
+
+// Health Check
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // 1. Overview Statistics
 app.get('/api/stats', (_req, res) => {
@@ -525,6 +571,28 @@ app.delete('/api/drives/:id', (req, res) => {
   }
 });
 
+// 6b. Quick update manufacture date
+app.patch('/api/drives/:id/manufacture-date', (req, res) => {
+  try {
+    const { manufacture_date } = req.body;
+    const drive = db.prepare('SELECT * FROM drives WHERE id = ?').get(req.params.id);
+    if (!drive) {
+      return res.status(404).json({ error: 'Drive not found' });
+    }
+
+    db.prepare(`
+      UPDATE drives
+      SET manufacture_date = ?, updated_at = ?
+      WHERE id = ?
+    `).run(manufacture_date ? manufacture_date.trim() : null, new Date().toISOString(), req.params.id);
+
+    const updated = db.prepare('SELECT * FROM drives WHERE id = ?').get(req.params.id);
+    res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 7. Parse CrystalDiskInfo text
 app.post('/api/parse-crystaldiskinfo', (req, res) => {
   try {
@@ -551,6 +619,60 @@ app.post('/api/parse-crystaldiskinfo', (req, res) => {
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// 7b. Parse CrystalDiskInfo Screenshot via Gemini Vision OCR
+app.post('/api/parse-crystaldisk-image', upload.single('screenshot'), async (req, res) => {
+  try {
+    let imageBuffer: Buffer | null = null;
+    let mimeType = 'image/png';
+
+    if (req.file) {
+      imageBuffer = fs.readFileSync(req.file.path);
+      mimeType = req.file.mimetype || 'image/png';
+      // Clean up temporary upload file
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) { /* ignore */ }
+    } else if (req.body.imageBase64) {
+      const rawBase64 = req.body.imageBase64;
+      const match = rawBase64.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1];
+        imageBuffer = Buffer.from(match[2], 'base64');
+      } else {
+        imageBuffer = Buffer.from(rawBase64, 'base64');
+      }
+    }
+
+    if (!imageBuffer || imageBuffer.length === 0) {
+      return res.status(400).json({
+        error: 'No image provided. Please upload a screenshot file or paste an image from clipboard.'
+      });
+    }
+
+    const { parsed, rawText } = await parseCrystalDiskScreenshot(imageBuffer, mimeType);
+
+    // Try finding matching drive by serial number or model
+    let matchedDrive: any = null;
+    if (parsed.serialNumber) {
+      matchedDrive = db.prepare('SELECT * FROM drives WHERE LOWER(serial_number) = LOWER(?)').get(parsed.serialNumber);
+    }
+    if (!matchedDrive && parsed.model) {
+      matchedDrive = db.prepare('SELECT * FROM drives WHERE LOWER(model) = LOWER(?)').get(parsed.model);
+    }
+
+    res.json({
+      parsed,
+      rawText,
+      matchedDrive: matchedDrive || null
+    });
+  } catch (error: any) {
+    console.error('Failed to parse CrystalDisk image:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to analyze CrystalDisk screenshot'
+    });
   }
 });
 

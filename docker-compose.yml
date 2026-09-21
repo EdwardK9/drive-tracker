@@ -18,10 +18,11 @@ services:
       - drive_tracker_data:/app/data
       - drive_tracker_uploads:/app/uploads
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/stats || exit 1"]
-      interval: 30s
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 15s
       timeout: 5s
       retries: 3
+      start_period: 15s
 
 volumes:
   drive_tracker_data:

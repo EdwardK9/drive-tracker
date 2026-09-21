@@ -10,6 +10,7 @@ import { CrystalDiskParserModal } from './components/CrystalDiskParserModal';
 import { DriveDetailModal } from './components/DriveDetailModal';
 import { PortainerGuideModal } from './components/PortainerGuideModal';
 import { DocumentViewerModal } from './components/DocumentViewerModal';
+import { APP_VERSION, APP_BUILD_DATE } from './version';
 
 export function App() {
   const [drives, setDrives] = useState<Drive[]>([]);
@@ -325,33 +326,33 @@ export function App() {
         )}
       </main>
 
+      {/* Application Footer with Version Tracker */}
+      <footer className="mt-12 border-t border-slate-800/80 bg-slate-950/40 py-6 px-4">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+          <div className="flex items-center space-x-2">
+            <span className="font-semibold text-slate-400">Drive Tracker</span>
+            <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-sky-400 font-bold">
+              v{APP_VERSION}
+            </span>
+            <span className="text-slate-600">•</span>
+            <span className="text-slate-400 font-mono">Updated {APP_BUILD_DATE}</span>
+          </div>
+
+          <div className="flex items-center space-x-4 text-[11px] text-slate-400">
+            <span>CrystalDiskInfo SMART &amp; Warranty Inventory</span>
+            <span className="text-slate-700 hidden sm:inline">•</span>
+            <button
+              onClick={() => setIsPortainerModalOpen(true)}
+              className="text-sky-400 hover:text-sky-300 hover:underline transition-colors"
+            >
+              Docker &amp; Portainer Guide
+            </button>
+          </div>
+        </div>
+      </footer>
+
       {/* Modals */}
-      <AddDriveModal
-        isOpen={isAddModalOpen}
-        onClose={() => {
-          setIsAddModalOpen(false);
-          setDriveToEdit(null);
-          setCreateFromReportData(undefined);
-        }}
-        editDrive={driveToEdit}
-        existingCount={drives.length}
-        initialValues={createFromReportData}
-        onSuccess={() => {
-          loadAll();
-        }}
-      />
-
-      <CrystalDiskParserModal
-        isOpen={isParserModalOpen}
-        onClose={() => setIsParserModalOpen(false)}
-        drives={drives}
-        preselectedDrive={selectedDriveForQuickLog}
-        onSuccess={() => {
-          loadAll();
-        }}
-        onCreateDriveFromReport={handleOpenAddWithReport}
-      />
-
+      {/* Base Drive Detail Modal (z-50) */}
       <DriveDetailModal
         driveId={selectedDriveForDetail}
         isOpen={!!selectedDriveForDetail}
@@ -371,6 +372,35 @@ export function App() {
         onViewReceipt={(r) => setViewingReceipt(r)}
       />
 
+      {/* CrystalDiskInfo Parser / Screenshot OCR Modal (z-[70]) */}
+      <CrystalDiskParserModal
+        isOpen={isParserModalOpen}
+        onClose={() => setIsParserModalOpen(false)}
+        drives={drives}
+        preselectedDrive={selectedDriveForQuickLog}
+        onSuccess={() => {
+          loadAll();
+        }}
+        onCreateDriveFromReport={handleOpenAddWithReport}
+      />
+
+      {/* Add / Edit Drive Modal (z-[70]) */}
+      <AddDriveModal
+        isOpen={isAddModalOpen}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setDriveToEdit(null);
+          setCreateFromReportData(undefined);
+        }}
+        editDrive={driveToEdit}
+        existingCount={drives.length}
+        initialValues={createFromReportData}
+        onSuccess={() => {
+          loadAll();
+        }}
+      />
+
+      {/* Portainer & Docker Compose Setup Guide (z-[70]) */}
       <PortainerGuideModal
         isOpen={isPortainerModalOpen}
         onClose={() => setIsPortainerModalOpen(false)}
@@ -379,6 +409,7 @@ export function App() {
         }}
       />
 
+      {/* Document Viewer Modal (z-[80]) */}
       <DocumentViewerModal
         receipt={viewingReceipt}
         onClose={() => setViewingReceipt(null)}

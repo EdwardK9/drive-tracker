@@ -1,6 +1,6 @@
 {
   "name": "drive-tracker",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@google/genai": "^2.23.0",
     "better-sqlite3": "^11.8.1",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",
