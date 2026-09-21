@@ -57,7 +57,7 @@ services:
     container_name: drive-tracker
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3101:3000" # Map host port 3101 to container port 3000 (access at http://<ip>:3101)
     environment:
       - NODE_ENV=production
       - PORT=3000

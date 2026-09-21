@@ -6,7 +6,8 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
-RUN npm ci
+# Use npm ci if package-lock.json exists, otherwise fallback to npm install
+RUN if [ -f package-lock.json ]; then npm ci || npm install --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 
 COPY . .
 RUN npm run build
@@ -19,7 +20,8 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+# Install production dependencies (tsx is in dependencies so production runtime has tsx)
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev || npm install --omit=dev --no-audit --no-fund; else npm install --omit=dev --no-audit --no-fund; fi
 
 # Copy built frontend and server code
 COPY --from=builder /app/dist ./dist
