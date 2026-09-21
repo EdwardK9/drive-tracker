@@ -31,6 +31,7 @@ export const AddDriveModal: React.FC<AddDriveModalProps> = ({
   
   // Purchase & Warranty
   const [vendor, setVendor] = useState('');
+  const [manufactureDate, setManufactureDate] = useState('');
   const [purchaseDate, setPurchaseDate] = useState('');
   const [orderNumber, setOrderNumber] = useState('');
   const [purchasePrice, setPurchasePrice] = useState<string | number>('');
@@ -62,6 +63,7 @@ export const AddDriveModal: React.FC<AddDriveModalProps> = ({
       setInterfaceType(editDrive.interface || 'SATA III');
       setStatus(editDrive.status || 'Active');
       setVendor(editDrive.vendor || '');
+      setManufactureDate(editDrive.manufacture_date || '');
       setPurchaseDate(editDrive.purchase_date || '');
       setOrderNumber(editDrive.order_number || '');
       setPurchasePrice(editDrive.purchase_price ?? '');
@@ -86,6 +88,7 @@ export const AddDriveModal: React.FC<AddDriveModalProps> = ({
       }
       setFormFactor(initialValues.form_factor || '3.5" HDD');
       setInterfaceType(initialValues.interface || 'SATA III');
+      setManufactureDate(initialValues.manufacture_date || '');
       setInitialPoh(initialValues.initial_power_on_hours ?? 0);
       setInitialPoc(initialValues.initial_power_on_count ?? 0);
       setNotes(initialValues.notes || '');
@@ -100,6 +103,7 @@ export const AddDriveModal: React.FC<AddDriveModalProps> = ({
       setInterfaceType('SATA III');
       setStatus('Active');
       setVendor('');
+      setManufactureDate('');
       setPurchaseDate(new Date().toISOString().split('T')[0]);
       setOrderNumber('');
       setPurchasePrice('');
@@ -161,6 +165,7 @@ export const AddDriveModal: React.FC<AddDriveModalProps> = ({
         interface: interfaceType,
         status,
         vendor: vendor.trim() || null,
+        manufacture_date: manufactureDate || null,
         purchase_date: purchaseDate || null,
         order_number: orderNumber.trim() || null,
         purchase_price: purchasePrice !== '' ? parseFloat(String(purchasePrice)) : null,
@@ -230,11 +235,11 @@ export const AddDriveModal: React.FC<AddDriveModalProps> = ({
               <span>1. Drive Inventory & Identification</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Custom Assigned ID */}
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Custom Assigned ID <span className="text-slate-500">(matches physical label)</span>
+                  Custom Assigned ID <span className="text-slate-500">(label)</span>
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500 font-mono text-xs">
@@ -245,12 +250,12 @@ export const AddDriveModal: React.FC<AddDriveModalProps> = ({
                     required
                     value={customId}
                     onChange={(e) => setCustomId(e.target.value)}
-                    placeholder="e.g. DRV-01, Bay-3, ST18-A"
+                    placeholder="e.g. DRV-01, Bay-3"
                     className="w-full pl-8 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-sky-500 font-mono"
                   />
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Custom numbering to match your drive caddies, server bays, or sticky labels.
+                  Matches your drive caddies or bays.
                 </p>
               </div>
 
@@ -268,7 +273,24 @@ export const AddDriveModal: React.FC<AddDriveModalProps> = ({
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-sky-500 font-mono uppercase"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Unique manufacturer serial indexed for quick lookup and CrystalDiskInfo matching.
+                  Indexed for CrystalDiskInfo matching.
+                </p>
+              </div>
+
+              {/* Manufacture Date (DOM) */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Manufacture Date</span>
+                  <span className="text-[10px] text-amber-400/90 font-mono">Age / Risk</span>
+                </label>
+                <input
+                  type="date"
+                  value={manufactureDate}
+                  onChange={(e) => setManufactureDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-sky-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Printed on drive label (DOM).
                 </p>
               </div>
             </div>

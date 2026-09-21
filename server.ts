@@ -78,6 +78,121 @@ function getWarrantyStatus(warrantyExpires?: string | null) {
   }
 }
 
+function calculateDriveAgeAndRisk(
+  manufactureDateStr: string | null | undefined,
+  currentPoh: number,
+  healthStatus: string = 'Good',
+  smartAttributes: any[] = []
+) {
+  if (!manufactureDateStr) {
+    return {
+      age_info: null,
+      risk_assessment: null
+    };
+  }
+
+  const mfgDate = new Date(manufactureDateStr);
+  if (isNaN(mfgDate.getTime())) {
+    return { age_info: null, risk_assessment: null };
+  }
+
+  const now = new Date();
+  const diffMs = now.getTime() - mfgDate.getTime();
+  const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  const totalCalendarHours = diffDays * 24;
+
+  const ageYears = +(diffDays / 365.25).toFixed(1);
+  const ageMonths = Math.floor(diffDays / 30.4375);
+
+  let formattedAge = '';
+  const yearsPart = Math.floor(ageMonths / 12);
+  const monthsPart = ageMonths % 12;
+  if (yearsPart > 0) {
+    formattedAge = `${yearsPart} yr${yearsPart > 1 ? 's' : ''}${monthsPart > 0 ? `, ${monthsPart} mo${monthsPart > 1 ? 's' : ''}` : ''}`;
+  } else {
+    formattedAge = `${monthsPart} month${monthsPart === 1 ? '' : 's'}`;
+  }
+
+  // Active duty cycle (% of elapsed physical calendar hours spent powered on)
+  const dutyCyclePercent = totalCalendarHours > 0
+    ? Math.min(100, Math.round((currentPoh / totalCalendarHours) * 100))
+    : 100;
+
+  // Check for critical SMART attributes (reallocated or pending sectors)
+  const reallocated = smartAttributes.find((a: any) => a.id === '05' || a.name?.toLowerCase().includes('reallocated'));
+  const pending = smartAttributes.find((a: any) => a.id === 'C5' || a.name?.toLowerCase().includes('pending'));
+  const hasBadSectors = (reallocated && parseInt(reallocated.rawValue || '0', 16) > 0) ||
+                        (pending && parseInt(pending.rawValue || '0', 16) > 0);
+
+  // Bathtub Curve & Risk Assessment
+  let phase: 'burn_in' | 'prime' | 'mature' | 'wear_out' = 'prime';
+  let phaseLabel = 'Prime Operational Phase';
+  let riskLevel: 'low' | 'moderate' | 'elevated' | 'critical' = 'low';
+  let riskTitle = 'Lowest Statistical Failure Rate';
+  let riskDescription = 'Drive is in the optimal bathtub curve sweet spot with the lowest historical failure rates across enterprise fleet data.';
+  let bathtubProgress = 35;
+
+  if (ageYears < 0.35 || currentPoh < 2000) {
+    phase = 'burn_in';
+    phaseLabel = 'Infant / Burn-in Phase';
+    bathtubProgress = Math.min(22, Math.round((currentPoh / 2000) * 22));
+    riskLevel = 'moderate';
+    riskTitle = 'Early Burn-in Period';
+    riskDescription = 'Early life burn-in phase. Manufacturing defects typically surface during early operational hours. Run extended SMART tests and parity scrubs.';
+  } else if (ageYears >= 5.0 || currentPoh >= 43800) {
+    phase = 'wear_out';
+    phaseLabel = 'Aging Wear-out Phase (>5 Yrs)';
+    bathtubProgress = Math.min(100, 75 + Math.round(((ageYears - 5) / 3) * 25));
+    riskLevel = 'elevated';
+    riskTitle = 'Elevated Age Risk (>5 Years)';
+    riskDescription = 'Beyond standard 5-year enterprise design life (40,000+ hrs). Mechanical bearing and lubricant degradation statistically increases failure probability. Ensure RAID/ZFS redundancy.';
+  } else if (ageYears >= 3.5 || currentPoh >= 30000) {
+    phase = 'mature';
+    phaseLabel = 'Mature Operating Phase';
+    bathtubProgress = 55 + Math.round(((ageYears - 3.5) / 1.5) * 20);
+    riskLevel = 'moderate';
+    riskTitle = 'Mature Disk (Normal Wear)';
+    riskDescription = 'Approaching standard warranty threshold. Operating smoothly, but mechanical aging is progressing. Continue routine monthly parity scrubs.';
+  } else {
+    phase = 'prime';
+    phaseLabel = 'Prime Operational Phase';
+    bathtubProgress = 25 + Math.round(((ageYears - 0.35) / 3.15) * 25);
+    riskLevel = 'low';
+    riskTitle = 'Lowest Statistical Failure Rate';
+    riskDescription = 'Drive is in the optimal bathtub curve sweet spot with the lowest historical failure rates across enterprise fleet data.';
+  }
+
+  // Critical overrides if SMART detected bad health or reallocated sectors
+  if (hasBadSectors || healthStatus === 'Bad') {
+    riskLevel = 'critical';
+    riskTitle = 'Critical Replacement Recommended';
+    riskDescription = 'Drive has sector reallocation or critical SMART warnings. Failures typically accelerate exponentially once bad sectors emerge.';
+  } else if (healthStatus === 'Caution') {
+    riskLevel = 'elevated';
+    riskTitle = 'Caution - Monitor Closely';
+    riskDescription = 'Drive SMART state is flagged with caution. Back up data immediately and watch scrub logs.';
+  }
+
+  return {
+    age_info: {
+      manufactureDate: manufactureDateStr,
+      ageYears,
+      ageMonths,
+      formattedAge,
+      totalCalendarHours,
+      dutyCyclePercent
+    },
+    risk_assessment: {
+      phase,
+      phaseLabel,
+      riskLevel,
+      riskTitle,
+      riskDescription,
+      bathtubProgress
+    }
+  };
+}
+
 // ==========================================
 // API ROUTES
 // ==========================================
@@ -174,12 +289,21 @@ app.get('/api/drives', (_req, res) => {
       const receiptCount = (db.prepare('SELECT COUNT(*) as cnt FROM drive_receipts WHERE drive_id = ?').get(drive.id) as { cnt: number }).cnt;
       const warrantyInfo = getWarrantyStatus(drive.warranty_expires);
 
+      const currentPoh = latestLog?.power_on_hours ?? drive.initial_power_on_hours ?? 0;
+      const { age_info, risk_assessment } = calculateDriveAgeAndRisk(
+        drive.manufacture_date,
+        currentPoh,
+        latestLog?.health_status || 'Good'
+      );
+
       return {
         ...drive,
         latest_log: latestLog || null,
         log_count: logCount,
         receipt_count: receiptCount,
-        warranty_info: warrantyInfo
+        warranty_info: warrantyInfo,
+        age_info,
+        risk_assessment
       };
     });
 
@@ -216,9 +340,20 @@ app.get('/api/drives/:id', (req, res) => {
 
     const warrantyInfo = getWarrantyStatus(drive.warranty_expires);
 
+    const latestLog = parsedLogs[0];
+    const currentPoh = latestLog?.power_on_hours ?? drive.initial_power_on_hours ?? 0;
+    const { age_info, risk_assessment } = calculateDriveAgeAndRisk(
+      drive.manufacture_date,
+      currentPoh,
+      latestLog?.health_status || 'Good',
+      latestLog?.smart_attributes || []
+    );
+
     res.json({
       ...drive,
       warranty_info: warrantyInfo,
+      age_info,
+      risk_assessment,
       logs: parsedLogs,
       receipts
     });
@@ -254,12 +389,12 @@ app.post('/api/drives', (req, res) => {
     const stmt = db.prepare(`
       INSERT INTO drives (
         id, custom_id, serial_number, model, capacity_gb, form_factor, interface,
-        status, vendor, purchase_date, order_number, purchase_price, currency,
+        status, vendor, manufacture_date, purchase_date, order_number, purchase_price, currency,
         warranty_months, warranty_expires, initial_power_on_hours, initial_power_on_count,
         notes, created_at, updated_at
       ) VALUES (
         @id, @custom_id, @serial_number, @model, @capacity_gb, @form_factor, @interface,
-        @status, @vendor, @purchase_date, @order_number, @purchase_price, @currency,
+        @status, @vendor, @manufacture_date, @purchase_date, @order_number, @purchase_price, @currency,
         @warranty_months, @warranty_expires, @initial_power_on_hours, @initial_power_on_count,
         @notes, @created_at, @updated_at
       )
@@ -275,6 +410,7 @@ app.post('/api/drives', (req, res) => {
       interface: body.interface || 'SATA III',
       status: body.status || 'Active',
       vendor: body.vendor ? body.vendor.trim() : null,
+      manufacture_date: body.manufacture_date ? body.manufacture_date.trim() : null,
       purchase_date: body.purchase_date || null,
       order_number: body.order_number ? body.order_number.trim() : null,
       purchase_price: body.purchase_price ? parseFloat(body.purchase_price) : null,
@@ -322,6 +458,7 @@ app.put('/api/drives/:id', (req, res) => {
         interface = @interface,
         status = @status,
         vendor = @vendor,
+        manufacture_date = @manufacture_date,
         purchase_date = @purchase_date,
         order_number = @order_number,
         purchase_price = @purchase_price,
@@ -345,6 +482,7 @@ app.put('/api/drives/:id', (req, res) => {
       interface: body.interface || (drive as any).interface,
       status: body.status || (drive as any).status,
       vendor: body.vendor !== undefined ? body.vendor : (drive as any).vendor,
+      manufacture_date: body.manufacture_date !== undefined ? (body.manufacture_date ? body.manufacture_date.trim() : null) : (drive as any).manufacture_date,
       purchase_date: body.purchase_date !== undefined ? body.purchase_date : (drive as any).purchase_date,
       order_number: body.order_number !== undefined ? body.order_number : (drive as any).order_number,
       purchase_price: body.purchase_price !== undefined ? parseFloat(body.purchase_price) : (drive as any).purchase_price,
@@ -588,12 +726,12 @@ app.post('/api/import', (req, res) => {
     const insertDrive = db.prepare(`
       INSERT OR REPLACE INTO drives (
         id, custom_id, serial_number, model, capacity_gb, form_factor, interface,
-        status, vendor, purchase_date, order_number, purchase_price, currency,
+        status, vendor, manufacture_date, purchase_date, order_number, purchase_price, currency,
         warranty_months, warranty_expires, initial_power_on_hours, initial_power_on_count,
         notes, created_at, updated_at
       ) VALUES (
         @id, @custom_id, @serial_number, @model, @capacity_gb, @form_factor, @interface,
-        @status, @vendor, @purchase_date, @order_number, @purchase_price, @currency,
+        @status, @vendor, @manufacture_date, @purchase_date, @order_number, @purchase_price, @currency,
         @warranty_months, @warranty_expires, @initial_power_on_hours, @initial_power_on_count,
         @notes, @created_at, @updated_at
       )
@@ -613,7 +751,10 @@ app.post('/api/import', (req, res) => {
 
     db.transaction(() => {
       for (const d of data.drives) {
-        insertDrive.run(d);
+        insertDrive.run({
+          ...d,
+          manufacture_date: d.manufacture_date || null
+        });
       }
       if (Array.isArray(data.logs)) {
         for (const l of data.logs) {

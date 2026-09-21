@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HardDrive, Thermometer, Clock, ShieldCheck, AlertTriangle, XCircle, FileText, ExternalLink, Copy, Check, Plus, Tag } from 'lucide-react';
+import { HardDrive, Thermometer, Clock, ShieldCheck, AlertTriangle, XCircle, FileText, ExternalLink, Copy, Check, Plus, Tag, Calendar, Activity } from 'lucide-react';
 import { Drive } from '../types';
 
 interface DriveCardProps {
@@ -194,6 +194,34 @@ export const DriveCard: React.FC<DriveCardProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Age & Failure Risk Banner */}
+        {drive.age_info && (
+          <div className="mb-3 p-2 rounded-lg bg-slate-900/60 border border-slate-700/40 flex items-center justify-between text-xs">
+            <div className="flex items-center space-x-1.5 text-slate-300">
+              <Calendar className="w-3.5 h-3.5 text-amber-400/90 shrink-0" />
+              <span className="font-medium">{drive.age_info.formattedAge}</span>
+              <span className="text-[10px] text-slate-400 font-mono">({drive.age_info.dutyCyclePercent}% duty)</span>
+            </div>
+
+            {drive.risk_assessment && (
+              <span
+                className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                  drive.risk_assessment.riskLevel === 'critical'
+                    ? 'bg-rose-950/80 text-rose-300 border-rose-800/80'
+                    : drive.risk_assessment.riskLevel === 'elevated'
+                    ? 'bg-amber-950/80 text-amber-300 border-amber-800/80'
+                    : drive.risk_assessment.riskLevel === 'moderate'
+                    ? 'bg-sky-950/80 text-sky-300 border-sky-800/70'
+                    : 'bg-emerald-950/70 text-emerald-300 border-emerald-800/60'
+                }`}
+                title={drive.risk_assessment.riskDescription}
+              >
+                {drive.risk_assessment.phaseLabel}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Purchase & Warranty summary */}
         <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs">

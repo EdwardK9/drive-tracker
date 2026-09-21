@@ -44,6 +44,24 @@ export interface WarrantyInfo {
   label: string;
 }
 
+export interface DriveAgeInfo {
+  manufactureDate: string;
+  ageYears: number;
+  ageMonths: number;
+  formattedAge: string;
+  totalCalendarHours: number;
+  dutyCyclePercent: number;
+}
+
+export interface DriveRiskAssessment {
+  phase: 'burn_in' | 'prime' | 'mature' | 'wear_out';
+  phaseLabel: string;
+  riskLevel: 'low' | 'moderate' | 'elevated' | 'critical';
+  riskTitle: string;
+  riskDescription: string;
+  bathtubProgress: number;
+}
+
 export interface Drive {
   id: string;
   custom_id: string;
@@ -54,6 +72,7 @@ export interface Drive {
   interface: string;
   status: 'Active' | 'Spare' | 'Cold Storage' | 'RMA' | 'Failed';
   vendor?: string | null;
+  manufacture_date?: string | null;
   purchase_date?: string | null;
   order_number?: string | null;
   purchase_price?: number | null;
@@ -80,6 +99,8 @@ export interface Drive {
   log_count?: number;
   receipt_count?: number;
   warranty_info?: WarrantyInfo;
+  age_info?: DriveAgeInfo | null;
+  risk_assessment?: DriveRiskAssessment | null;
 }
 
 export interface DriveDetail extends Drive {

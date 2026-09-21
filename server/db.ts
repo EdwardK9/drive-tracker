@@ -30,6 +30,7 @@ export function initDatabase() {
       interface TEXT DEFAULT 'SATA III',
       status TEXT DEFAULT 'Active',
       vendor TEXT,
+      manufacture_date TEXT,
       purchase_date TEXT,
       order_number TEXT,
       purchase_price REAL,
@@ -80,6 +81,22 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_receipts_drive_id ON drive_receipts(drive_id);
   `);
 
+  // Auto-migrate column if adding to existing database
+  try {
+    db.exec('ALTER TABLE drives ADD COLUMN manufacture_date TEXT');
+  } catch (e) {
+    // Column already exists
+  }
+
+  // Ensure default sample drives have manufacture dates if seeded prior to column migration
+  try {
+    db.prepare(`UPDATE drives SET manufacture_date = '2022-03-15' WHERE id = 'drv-exos-18tb-01' AND (manufacture_date IS NULL OR manufacture_date = '')`).run();
+    db.prepare(`UPDATE drives SET manufacture_date = '2023-01-20' WHERE id = 'drv-wd-red-14tb-02' AND (manufacture_date IS NULL OR manufacture_date = '')`).run();
+    db.prepare(`UPDATE drives SET manufacture_date = '2023-08-10' WHERE id = 'drv-samsung-990-03' AND (manufacture_date IS NULL OR manufacture_date = '')`).run();
+  } catch (e) {
+    // Ignore
+  }
+
   // Seed sample drives if empty
   const count = db.prepare('SELECT COUNT(*) as cnt FROM drives').get() as { cnt: number };
   if (count.cnt === 0) {
@@ -91,12 +108,12 @@ function seedInitialData() {
   const insertDrive = db.prepare(`
     INSERT INTO drives (
       id, custom_id, serial_number, model, capacity_gb, form_factor, interface,
-      status, vendor, purchase_date, order_number, purchase_price, currency,
+      status, vendor, manufacture_date, purchase_date, order_number, purchase_price, currency,
       warranty_months, warranty_expires, initial_power_on_hours, initial_power_on_count,
       notes, created_at, updated_at
     ) VALUES (
       @id, @custom_id, @serial_number, @model, @capacity_gb, @form_factor, @interface,
-      @status, @vendor, @purchase_date, @order_number, @purchase_price, @currency,
+      @status, @vendor, @manufacture_date, @purchase_date, @order_number, @purchase_price, @currency,
       @warranty_months, @warranty_expires, @initial_power_on_hours, @initial_power_on_count,
       @notes, @created_at, @updated_at
     )
@@ -126,6 +143,7 @@ function seedInitialData() {
     interface: 'SATA III',
     status: 'Active',
     vendor: 'ServerPartDeals',
+    manufacture_date: '2021-04-15',
     purchase_date: '2024-01-15',
     order_number: 'SPD-884920',
     purchase_price: 199.99,
@@ -218,6 +236,7 @@ function seedInitialData() {
     interface: 'SATA III',
     status: 'Active',
     vendor: 'Amazon',
+    manufacture_date: '2023-06-18',
     purchase_date: '2023-08-04',
     order_number: '114-7291844-0192842',
     purchase_price: 249.99,
@@ -262,6 +281,7 @@ function seedInitialData() {
     interface: 'PCIe 4.0 x4',
     status: 'Active',
     vendor: 'Newegg',
+    manufacture_date: '2023-09-12',
     purchase_date: '2023-11-24',
     order_number: 'NEG-481920-A',
     purchase_price: 159.99,
