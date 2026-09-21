@@ -80,9 +80,11 @@ export interface Drive {
   serial_number: string;
   model: string;
   capacity_gb: number;
+  usable_capacity_gb?: number | null;
   form_factor: string;
   interface: string;
-  status: 'Active' | 'Spare' | 'Cold Storage' | 'RMA' | 'Failed';
+  status: 'Active' | 'Spare' | 'Cold Storage' | 'RMA' | 'Failed' | 'Replaced';
+  location?: string | null;
   vendor?: string | null;
   manufacture_date?: string | null;
   purchase_date?: string | null;

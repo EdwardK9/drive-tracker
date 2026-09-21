@@ -7,9 +7,11 @@ import { StatsOverview } from './components/StatsOverview';
 import { DriveCard } from './components/DriveCard';
 import { AddDriveModal } from './components/AddDriveModal';
 import { CrystalDiskParserModal } from './components/CrystalDiskParserModal';
+import { BulkImportModal } from './components/BulkImportModal';
 import { DriveDetailModal } from './components/DriveDetailModal';
 import { PortainerGuideModal } from './components/PortainerGuideModal';
 import { DocumentViewerModal } from './components/DocumentViewerModal';
+import { PrintLabelsModal } from './components/PrintLabelsModal';
 import { APP_VERSION, APP_BUILD_DATE } from './version';
 
 export function App() {
@@ -29,6 +31,9 @@ export function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isParserModalOpen, setIsParserModalOpen] = useState(false);
   const [isPortainerModalOpen, setIsPortainerModalOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [printPreselectedDriveId, setPrintPreselectedDriveId] = useState<string | null>(null);
   const [selectedDriveForDetail, setSelectedDriveForDetail] = useState<string | null>(null);
   const [selectedDriveForQuickLog, setSelectedDriveForQuickLog] = useState<Drive | null>(null);
   const [driveToEdit, setDriveToEdit] = useState<Drive | null>(null);
@@ -149,6 +154,11 @@ export function App() {
           setIsParserModalOpen(true);
         }}
         onOpenPortainerModal={() => setIsPortainerModalOpen(true)}
+        onOpenPrintModal={() => {
+          setPrintPreselectedDriveId(null);
+          setIsPrintModalOpen(true);
+        }}
+        onOpenBulkImportModal={() => setIsBulkImportOpen(true)}
         onRefresh={loadAll}
         isLoading={loading}
       />
@@ -320,6 +330,10 @@ export function App() {
                   setCreateFromReportData(undefined);
                   setIsAddModalOpen(true);
                 }}
+                onPrint={(d) => {
+                  setPrintPreselectedDriveId(d.id);
+                  setIsPrintModalOpen(true);
+                }}
               />
             ))}
           </div>
@@ -370,6 +384,21 @@ export function App() {
           setIsParserModalOpen(true);
         }}
         onViewReceipt={(r) => setViewingReceipt(r)}
+        onPrintLabel={(d) => {
+          setPrintPreselectedDriveId(d.id);
+          setIsPrintModalOpen(true);
+        }}
+      />
+
+      {/* Print Labels Modal (z-[70]) */}
+      <PrintLabelsModal
+        isOpen={isPrintModalOpen}
+        onClose={() => {
+          setIsPrintModalOpen(false);
+          setPrintPreselectedDriveId(null);
+        }}
+        drives={drives}
+        preselectedDriveId={printPreselectedDriveId}
       />
 
       {/* CrystalDiskInfo Parser / Screenshot OCR Modal (z-[70]) */}
@@ -395,6 +424,15 @@ export function App() {
         editDrive={driveToEdit}
         existingCount={drives.length}
         initialValues={createFromReportData}
+        onSuccess={() => {
+          loadAll();
+        }}
+      />
+
+      {/* Bulk spreadsheet copy paste import modal */}
+      <BulkImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
         onSuccess={() => {
           loadAll();
         }}

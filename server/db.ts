@@ -26,9 +26,11 @@ export function initDatabase() {
       serial_number TEXT UNIQUE NOT NULL,
       model TEXT NOT NULL,
       capacity_gb INTEGER NOT NULL,
+      usable_capacity_gb INTEGER,
       form_factor TEXT DEFAULT '3.5" HDD',
       interface TEXT DEFAULT 'SATA III',
       status TEXT DEFAULT 'Active',
+      location TEXT DEFAULT 'Storage',
       vendor TEXT,
       manufacture_date TEXT,
       purchase_date TEXT,
@@ -84,6 +86,18 @@ export function initDatabase() {
   // Auto-migrate column if adding to existing database
   try {
     db.exec('ALTER TABLE drives ADD COLUMN manufacture_date TEXT');
+  } catch (e) {
+    // Column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE drives ADD COLUMN location TEXT DEFAULT 'Storage'");
+  } catch (e) {
+    // Column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE drives ADD COLUMN usable_capacity_gb INTEGER");
   } catch (e) {
     // Column already exists
   }

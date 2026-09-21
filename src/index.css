@@ -27,3 +27,45 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Dedicated Print Media Styles */
+@media print {
+  /* Hide the rest of the application, navbars, modals, background overlays */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Expose only the printable area and its children */
+  #drive-printable-area,
+  #drive-printable-area * {
+    visibility: visible;
+  }
+
+  /* Reset layout constraints so labels flow directly onto printable paper/label roll */
+  #drive-printable-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Prevent awkward page break cuts across labels */
+  #drive-printable-area > div > div {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

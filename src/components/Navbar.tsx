@@ -1,5 +1,5 @@
 import React from 'react';
-import { HardDrive, Plus, FileText, Server, RefreshCw } from 'lucide-react';
+import { HardDrive, Plus, FileText, Server, RefreshCw, Printer, Table } from 'lucide-react';
 import { OverviewStats } from '../types';
 import { APP_VERSION, APP_RELEASE_TITLE } from '../version';
 
@@ -8,6 +8,8 @@ interface NavbarProps {
   onOpenAddModal: () => void;
   onOpenParserModal: () => void;
   onOpenPortainerModal: () => void;
+  onOpenPrintModal: () => void;
+  onOpenBulkImportModal: () => void;
   onRefresh: () => void;
   isLoading: boolean;
 }
@@ -17,6 +19,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAddModal,
   onOpenParserModal,
   onOpenPortainerModal,
+  onOpenPrintModal,
+  onOpenBulkImportModal,
   onRefresh,
   isLoading
 }) => {
@@ -76,6 +80,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
+            id="btn-print-labels"
+            onClick={onOpenPrintModal}
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg text-slate-200 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 transition-colors shadow-sm"
+            title="Print Drive Caddy & Box Labels"
+          >
+            <Printer className="w-4 h-4 text-emerald-400" />
+            <span className="hidden md:inline">Print Labels</span>
+            <span className="md:hidden">Print</span>
+          </button>
+
+          <button
             id="btn-portainer-guide"
             onClick={onOpenPortainerModal}
             className="flex items-center space-x-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 transition-colors shadow-sm"
@@ -92,6 +107,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <FileText className="w-4 h-4 text-sky-400" />
             <span>Paste CrystalDisk</span>
+          </button>
+
+          <button
+            id="btn-paste-spreadsheet"
+            onClick={onOpenBulkImportModal}
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg text-emerald-300 bg-emerald-950/70 hover:bg-emerald-900/80 border border-emerald-700/60 transition-colors shadow-sm"
+            title="Import Excel or Google Sheets table"
+          >
+            <Table className="w-4 h-4 text-emerald-400" />
+            <span>Paste Spreadsheet</span>
           </button>
 
           <button

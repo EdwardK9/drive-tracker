@@ -52,7 +52,7 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 app.get('/api/version', (_req, res) => {
   res.json({
     name: 'Drive Tracker',
-    version: '1.1.0',
+    version: '1.2.0',
     updatedAt: '2026-09-21',
   });
 });
@@ -434,13 +434,13 @@ app.post('/api/drives', (req, res) => {
 
     const stmt = db.prepare(`
       INSERT INTO drives (
-        id, custom_id, serial_number, model, capacity_gb, form_factor, interface,
-        status, vendor, manufacture_date, purchase_date, order_number, purchase_price, currency,
+        id, custom_id, serial_number, model, capacity_gb, usable_capacity_gb, form_factor, interface,
+        status, location, vendor, manufacture_date, purchase_date, order_number, purchase_price, currency,
         warranty_months, warranty_expires, initial_power_on_hours, initial_power_on_count,
         notes, created_at, updated_at
       ) VALUES (
-        @id, @custom_id, @serial_number, @model, @capacity_gb, @form_factor, @interface,
-        @status, @vendor, @manufacture_date, @purchase_date, @order_number, @purchase_price, @currency,
+        @id, @custom_id, @serial_number, @model, @capacity_gb, @usable_capacity_gb, @form_factor, @interface,
+        @status, @location, @vendor, @manufacture_date, @purchase_date, @order_number, @purchase_price, @currency,
         @warranty_months, @warranty_expires, @initial_power_on_hours, @initial_power_on_count,
         @notes, @created_at, @updated_at
       )
@@ -452,9 +452,11 @@ app.post('/api/drives', (req, res) => {
       serial_number: body.serial_number.trim(),
       model: body.model.trim(),
       capacity_gb: parseInt(body.capacity_gb, 10),
+      usable_capacity_gb: body.usable_capacity_gb ? parseInt(body.usable_capacity_gb, 10) : null,
       form_factor: body.form_factor || '3.5" HDD',
       interface: body.interface || 'SATA III',
       status: body.status || 'Active',
+      location: body.location || 'Storage',
       vendor: body.vendor ? body.vendor.trim() : null,
       manufacture_date: body.manufacture_date ? body.manufacture_date.trim() : null,
       purchase_date: body.purchase_date || null,
@@ -480,6 +482,144 @@ app.post('/api/drives', (req, res) => {
   }
 });
 
+// 4b. Batch Create/Import Drives from Excel/Sheets
+app.post('/api/drives/batch', (req, res) => {
+  try {
+    const drivesArray = req.body;
+    if (!Array.isArray(drivesArray)) {
+      return res.status(400).json({ error: 'Payload must be a JSON array of drives.' });
+    }
+
+    const transaction = db.transaction((arr: any[]) => {
+      const results: any[] = [];
+      const errors: string[] = [];
+
+      const insertDriveStmt = db.prepare(`
+        INSERT INTO drives (
+          id, custom_id, serial_number, model, capacity_gb, usable_capacity_gb, form_factor, interface,
+          status, location, vendor, manufacture_date, purchase_date, order_number, purchase_price, currency,
+          warranty_months, warranty_expires, initial_power_on_hours, initial_power_on_count,
+          notes, created_at, updated_at
+        ) VALUES (
+          @id, @custom_id, @serial_number, @model, @capacity_gb, @usable_capacity_gb, @form_factor, @interface,
+          @status, @location, @vendor, @manufacture_date, @purchase_date, @order_number, @purchase_price, @currency,
+          @warranty_months, @warranty_expires, @initial_power_on_hours, @initial_power_on_count,
+          @notes, @created_at, @updated_at
+        )
+      `);
+
+      const insertLogStmt = db.prepare(`
+        INSERT INTO crystal_disk_logs (
+          id, drive_id, log_date, health_status, health_percentage, temperature_c,
+          temperature_f, power_on_hours, power_on_count, host_reads_gb, host_writes_gb,
+          transfer_mode, raw_crystal_text, smart_attributes_json, log_notes, created_at
+        ) VALUES (
+          @id, @drive_id, @log_date, @health_status, @health_percentage, @temperature_c,
+          @temperature_f, @power_on_hours, @power_on_count, @host_reads_gb, @host_writes_gb,
+          @transfer_mode, @raw_crystal_text, @smart_attributes_json, @log_notes, @created_at
+        )
+      `);
+
+      for (let i = 0; i < arr.length; i++) {
+        const item = arr[i];
+        if (!item.serial_number || !item.model || !item.capacity_gb) {
+          errors.push(`Row ${i + 1}: Missing Serial Number, Model, or Capacity`);
+          continue;
+        }
+
+        const cleanSerial = item.serial_number.trim().toUpperCase();
+
+        // Check if serial number already exists to prevent crash
+        const existing = db.prepare('SELECT id FROM drives WHERE UPPER(serial_number) = ?').get(cleanSerial);
+        if (existing) {
+          errors.push(`Row ${i + 1} (${cleanSerial}): A drive with this serial number already exists.`);
+          continue;
+        }
+
+        const id = `drv-${crypto.randomBytes(6).toString('hex')}`;
+        const now = new Date().toISOString();
+
+        let warranty_expires = item.warranty_expires;
+        if (!warranty_expires && item.purchase_date && item.warranty_months) {
+          warranty_expires = calculateWarrantyExpiry(item.purchase_date, parseInt(item.warranty_months, 10));
+        }
+
+        let custom_id = item.custom_id ? item.custom_id.trim() : '';
+        if (!custom_id) {
+          const countResult = db.prepare('SELECT COUNT(*) as count FROM drives').get() as { count: number };
+          custom_id = `DRV-${String(countResult.count + 1 + i).padStart(2, '0')}`;
+        }
+
+        try {
+          insertDriveStmt.run({
+            id,
+            custom_id,
+            serial_number: cleanSerial,
+            model: item.model.trim(),
+            capacity_gb: parseInt(item.capacity_gb, 10),
+            usable_capacity_gb: item.usable_capacity_gb ? parseInt(item.usable_capacity_gb, 10) : null,
+            form_factor: item.form_factor || '3.5" HDD',
+            interface: item.interface || 'SATA III',
+            status: item.status || 'Active',
+            location: item.location || 'Storage',
+            vendor: item.vendor ? item.vendor.trim() : null,
+            manufacture_date: item.manufacture_date ? item.manufacture_date.trim() : null,
+            purchase_date: item.purchase_date || null,
+            order_number: item.order_number ? item.order_number.trim() : null,
+            purchase_price: item.purchase_price ? parseFloat(item.purchase_price) : null,
+            currency: item.currency || 'USD',
+            warranty_months: item.warranty_months ? parseInt(item.warranty_months, 10) : 36,
+            warranty_expires: warranty_expires || null,
+            initial_power_on_hours: item.initial_power_on_hours ? parseInt(item.initial_power_on_hours, 10) : 0,
+            initial_power_on_count: item.initial_power_on_count ? parseInt(item.initial_power_on_count, 10) : 0,
+            notes: item.notes ? item.notes.trim() : null,
+            created_at: now,
+            updated_at: now
+          });
+
+          // Create baseline log if health / poh data is present
+          const hasHealth = item.health_status && item.health_status !== 'Unknown';
+          const hasPoh = item.initial_power_on_hours !== undefined && item.initial_power_on_hours !== null && item.initial_power_on_hours > 0;
+          if (hasHealth || hasPoh) {
+            const logId = `log-${crypto.randomBytes(6).toString('hex')}`;
+            const logDate = item.purchase_date || now.split('T')[0];
+            
+            insertLogStmt.run({
+              id: logId,
+              drive_id: id,
+              log_date: logDate,
+              health_status: item.health_status || 'Good',
+              health_percentage: item.health_percentage ? parseInt(item.health_percentage, 10) : (item.health_status === 'Good' ? 100 : null),
+              temperature_c: null,
+              temperature_f: null,
+              power_on_hours: item.initial_power_on_hours ? parseInt(item.initial_power_on_hours, 10) : 0,
+              power_on_count: item.initial_power_on_count ? parseInt(item.initial_power_on_count, 10) : 1,
+              host_reads_gb: null,
+              host_writes_gb: null,
+              transfer_mode: null,
+              raw_crystal_text: `Baseline imported from bulk table.\nLocation: ${item.location || 'Storage'}`,
+              smart_attributes_json: JSON.stringify([]),
+              log_notes: 'Initial state imported via Excel copy-paste table.',
+              created_at: now
+            });
+          }
+
+          results.push({ id, custom_id, serial_number: cleanSerial });
+        } catch (err: any) {
+          errors.push(`Row ${i + 1} (${cleanSerial}): ${err.message}`);
+        }
+      }
+
+      return { results, errors };
+    });
+
+    const output = transaction(drivesArray);
+    res.json({ success: true, results: output.results, errors: output.errors });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 5. Update existing drive
 app.put('/api/drives/:id', (req, res) => {
   try {
@@ -500,9 +640,11 @@ app.put('/api/drives/:id', (req, res) => {
         serial_number = @serial_number,
         model = @model,
         capacity_gb = @capacity_gb,
+        usable_capacity_gb = @usable_capacity_gb,
         form_factor = @form_factor,
         interface = @interface,
         status = @status,
+        location = @location,
         vendor = @vendor,
         manufacture_date = @manufacture_date,
         purchase_date = @purchase_date,
@@ -524,9 +666,11 @@ app.put('/api/drives/:id', (req, res) => {
       serial_number: body.serial_number ? body.serial_number.trim() : (drive as any).serial_number,
       model: body.model ? body.model.trim() : (drive as any).model,
       capacity_gb: body.capacity_gb ? parseInt(body.capacity_gb, 10) : (drive as any).capacity_gb,
+      usable_capacity_gb: body.usable_capacity_gb !== undefined ? (body.usable_capacity_gb ? parseInt(body.usable_capacity_gb, 10) : null) : (drive as any).usable_capacity_gb,
       form_factor: body.form_factor || (drive as any).form_factor,
       interface: body.interface || (drive as any).interface,
       status: body.status || (drive as any).status,
+      location: body.location !== undefined ? body.location : (drive as any).location,
       vendor: body.vendor !== undefined ? body.vendor : (drive as any).vendor,
       manufacture_date: body.manufacture_date !== undefined ? (body.manufacture_date ? body.manufacture_date.trim() : null) : (drive as any).manufacture_date,
       purchase_date: body.purchase_date !== undefined ? body.purchase_date : (drive as any).purchase_date,
@@ -588,6 +732,249 @@ app.patch('/api/drives/:id/manufacture-date', (req, res) => {
 
     const updated = db.prepare('SELECT * FROM drives WHERE id = ?').get(req.params.id);
     res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 6c. Bulk Import/Upsert of Drives and POH Logs
+app.post('/api/drives/bulk', (req, res) => {
+  try {
+    const { importType, items } = req.body;
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'items must be an array.' });
+    }
+
+    let inserted = 0;
+    let updated = 0;
+    let logsInserted = 0;
+    const failures: { item: any; reason: string }[] = [];
+    const now = new Date().toISOString();
+
+    const insertDriveStmt = db.prepare(`
+      INSERT INTO drives (
+        id, custom_id, serial_number, model, capacity_gb, usable_capacity_gb, form_factor, interface,
+        status, location, vendor, manufacture_date, purchase_date, order_number, purchase_price, currency,
+        warranty_months, warranty_expires, initial_power_on_hours, initial_power_on_count,
+        notes, created_at, updated_at
+      ) VALUES (
+        @id, @custom_id, @serial_number, @model, @capacity_gb, @usable_capacity_gb, @form_factor, @interface,
+        @status, @location, @vendor, @manufacture_date, @purchase_date, @order_number, @purchase_price, @currency,
+        @warranty_months, @warranty_expires, @initial_power_on_hours, @initial_power_on_count,
+        @notes, @created_at, @updated_at
+      )
+    `);
+
+    const updateDriveStmt = db.prepare(`
+      UPDATE drives SET
+        custom_id = @custom_id,
+        model = @model,
+        capacity_gb = @capacity_gb,
+        usable_capacity_gb = @usable_capacity_gb,
+        form_factor = @form_factor,
+        interface = @interface,
+        status = @status,
+        location = @location,
+        vendor = @vendor,
+        manufacture_date = @manufacture_date,
+        purchase_date = @purchase_date,
+        order_number = @order_number,
+        purchase_price = @purchase_price,
+        currency = @currency,
+        warranty_months = @warranty_months,
+        warranty_expires = @warranty_expires,
+        initial_power_on_hours = @initial_power_on_hours,
+        initial_power_on_count = @initial_power_on_count,
+        notes = @notes,
+        updated_at = @updated_at
+      WHERE id = @id
+    `);
+
+    const insertLogStmt = db.prepare(`
+      INSERT INTO crystal_disk_logs (
+        id, drive_id, log_date, health_status, health_percentage, temperature_c,
+        temperature_f, power_on_hours, power_on_count, host_reads_gb, host_writes_gb,
+        transfer_mode, raw_crystal_text, smart_attributes_json, log_notes, created_at
+      ) VALUES (
+        @id, @drive_id, @log_date, @health_status, @health_percentage, @temperature_c,
+        @temperature_f, @power_on_hours, @power_on_count, @host_reads_gb, @host_writes_gb,
+        @transfer_mode, @raw_crystal_text, @smart_attributes_json, @log_notes, @created_at
+      )
+    `);
+
+    // Helper: Calculate warranty expiration date
+    function calculateWarrantyExpiry(purchaseDateStr: string, months: number): string | null {
+      try {
+        const d = new Date(purchaseDateStr);
+        if (isNaN(d.getTime())) return null;
+        d.setMonth(d.getMonth() + months);
+        return d.toISOString().split('T')[0];
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Wrap the import process in a fast SQLite transaction
+    const transaction = db.transaction(() => {
+      if (importType === 'drives') {
+        for (const item of items) {
+          try {
+            const sn = item.serial_number ? item.serial_number.trim() : '';
+            if (!sn) {
+              failures.push({ item, reason: 'Missing Serial Number' });
+              continue;
+            }
+
+            const model = item.model ? item.model.trim() : 'Unknown Model';
+            const capacity_gb = parseInt(item.capacity_gb, 10) || 0;
+            const usable_capacity_gb = item.usable_capacity_gb ? parseInt(item.usable_capacity_gb, 10) : null;
+
+            // Check if drive with serial number exists
+            const existing = db.prepare('SELECT * FROM drives WHERE LOWER(serial_number) = LOWER(?)').get(sn) as any;
+
+            let warranty_expires = item.warranty_expires || null;
+            if (!warranty_expires && item.purchase_date && item.warranty_months) {
+              warranty_expires = calculateWarrantyExpiry(item.purchase_date, parseInt(item.warranty_months, 10));
+            }
+
+            if (existing) {
+              updateDriveStmt.run({
+                id: existing.id,
+                custom_id: item.custom_id !== undefined ? item.custom_id.trim() : existing.custom_id,
+                model: item.model ? item.model.trim() : existing.model,
+                capacity_gb: capacity_gb || existing.capacity_gb,
+                usable_capacity_gb: usable_capacity_gb !== null ? usable_capacity_gb : existing.usable_capacity_gb,
+                form_factor: item.form_factor || existing.form_factor,
+                interface: item.interface || existing.interface,
+                status: item.status || existing.status,
+                location: item.location || existing.location,
+                vendor: item.vendor !== undefined ? item.vendor : existing.vendor,
+                manufacture_date: item.manufacture_date !== undefined ? item.manufacture_date : existing.manufacture_date,
+                purchase_date: item.purchase_date !== undefined ? item.purchase_date : existing.purchase_date,
+                order_number: item.order_number !== undefined ? item.order_number : existing.order_number,
+                purchase_price: item.purchase_price !== undefined ? parseFloat(item.purchase_price) : existing.purchase_price,
+                currency: item.currency || existing.currency || 'USD',
+                warranty_months: item.warranty_months !== undefined ? parseInt(item.warranty_months, 10) : existing.warranty_months,
+                warranty_expires: warranty_expires || existing.warranty_expires,
+                initial_power_on_hours: item.initial_power_on_hours !== undefined ? parseInt(item.initial_power_on_hours, 10) : existing.initial_power_on_hours,
+                initial_power_on_count: item.initial_power_on_count !== undefined ? parseInt(item.initial_power_on_count, 10) : existing.initial_power_on_count,
+                notes: item.notes !== undefined ? item.notes : existing.notes,
+                updated_at: now
+              });
+              updated++;
+            } else {
+              const id = `drv-${crypto.randomBytes(6).toString('hex')}`;
+              let custom_id = item.custom_id ? item.custom_id.trim() : '';
+              if (!custom_id) {
+                const count = (db.prepare('SELECT COUNT(*) as count FROM drives').get() as { count: number }).count;
+                custom_id = `DRV-${String(count + 1 + inserted).padStart(2, '0')}`;
+              }
+
+              insertDriveStmt.run({
+                id,
+                custom_id,
+                serial_number: sn,
+                model,
+                capacity_gb,
+                usable_capacity_gb,
+                form_factor: item.form_factor || '3.5" HDD',
+                interface: item.interface || 'SATA III',
+                status: item.status || 'Active',
+                location: item.location || 'Storage',
+                vendor: item.vendor ? item.vendor.trim() : null,
+                manufacture_date: item.manufacture_date ? item.manufacture_date.trim() : null,
+                purchase_date: item.purchase_date || null,
+                order_number: item.order_number ? item.order_number.trim() : null,
+                purchase_price: item.purchase_price ? parseFloat(item.purchase_price) : null,
+                currency: item.currency || 'USD',
+                warranty_months: item.warranty_months ? parseInt(item.warranty_months, 10) : 36,
+                warranty_expires: warranty_expires,
+                initial_power_on_hours: item.initial_power_on_hours ? parseInt(item.initial_power_on_hours, 10) : 0,
+                initial_power_on_count: item.initial_power_on_count ? parseInt(item.initial_power_on_count, 10) : 0,
+                notes: item.notes ? item.notes.trim() : null,
+                created_at: now,
+                updated_at: now
+              });
+              inserted++;
+            }
+          } catch (err: any) {
+            failures.push({ item, reason: err.message });
+          }
+        }
+      } else if (importType === 'poh') {
+        for (const item of items) {
+          try {
+            const sn = item.serial_number ? item.serial_number.trim() : '';
+            const customId = item.custom_id ? item.custom_id.trim() : '';
+
+            if (!sn && !customId) {
+              failures.push({ item, reason: 'Neither Serial Number nor HDD Name/ID was provided.' });
+              continue;
+            }
+
+            // Find matching drive
+            let drive: any = null;
+            if (sn) {
+              drive = db.prepare('SELECT * FROM drives WHERE LOWER(serial_number) = LOWER(?)').get(sn);
+            }
+            if (!drive && customId) {
+              drive = db.prepare('SELECT * FROM drives WHERE LOWER(custom_id) = LOWER(?)').get(customId);
+            }
+
+            if (!drive) {
+              failures.push({ item, reason: `No matching drive found for Serial: "${sn}" or ID: "${customId}"` });
+              continue;
+            }
+
+            const logId = `log-${crypto.randomBytes(6).toString('hex')}`;
+            const log_date = item.log_date || new Date().toISOString().split('T')[0];
+            const power_on_hours = parseInt(item.power_on_hours, 10);
+            const power_on_count = item.power_on_count ? parseInt(item.power_on_count, 10) : null;
+            const health_status = item.health_status || 'Good';
+
+            if (isNaN(power_on_hours)) {
+              failures.push({ item, reason: 'Invalid or missing Power On Hours value.' });
+              continue;
+            }
+
+            insertLogStmt.run({
+              id: logId,
+              drive_id: drive.id,
+              log_date,
+              health_status,
+              health_percentage: item.health_percentage ? parseInt(item.health_percentage, 10) : null,
+              temperature_c: item.temperature_c ? parseInt(item.temperature_c, 10) : null,
+              temperature_f: item.temperature_f ? parseInt(item.temperature_f, 10) : null,
+              power_on_hours,
+              power_on_count,
+              host_reads_gb: item.host_reads_gb ? parseFloat(item.host_reads_gb) : null,
+              host_writes_gb: item.host_writes_gb ? parseFloat(item.host_writes_gb) : null,
+              transfer_mode: item.transfer_mode || null,
+              raw_crystal_text: item.raw_crystal_text || null,
+              smart_attributes_json: JSON.stringify([]),
+              log_notes: item.notes || 'Bulk imported Power-On Hours log.',
+              created_at: now
+            });
+            logsInserted++;
+          } catch (err: any) {
+            failures.push({ item, reason: err.message });
+          }
+        }
+      }
+    });
+
+    transaction();
+
+    res.json({
+      success: true,
+      stats: {
+        inserted,
+        updated,
+        logsInserted,
+        failuresCount: failures.length,
+        failures: failures.slice(0, 10) // Send top 10 failure reasons for debugging
+      }
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

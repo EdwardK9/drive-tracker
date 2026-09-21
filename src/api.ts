@@ -160,3 +160,45 @@ export async function importBackup(backupData: any): Promise<any> {
   }
   return res.json();
 }
+
+export async function batchCreateDrives(data: any[]): Promise<{
+  success: boolean;
+  results: { id: string; custom_id: string; serial_number: string }[];
+  errors: string[];
+}> {
+  const res = await fetch('/api/drives/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to bulk import drives');
+  }
+  return res.json();
+}
+
+export async function importBulkDrives(
+  importType: 'drives' | 'poh',
+  items: any[]
+): Promise<{
+  success: boolean;
+  stats: {
+    inserted: number;
+    updated: number;
+    logsInserted: number;
+    failuresCount: number;
+    failures: { item: any; reason: string }[];
+  }
+}> {
+  const res = await fetch('/api/drives/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ importType, items })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to bulk import drives');
+  }
+  return res.json();
+}

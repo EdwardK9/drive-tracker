@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HardDrive, Thermometer, Clock, ShieldCheck, AlertTriangle, XCircle, FileText, ExternalLink, Copy, Check, Plus, Tag, Calendar, Activity } from 'lucide-react';
+import { HardDrive, Thermometer, Clock, ShieldCheck, AlertTriangle, XCircle, FileText, ExternalLink, Copy, Check, Plus, Tag, Calendar, Activity, Printer } from 'lucide-react';
 import { Drive } from '../types';
 
 interface DriveCardProps {
@@ -7,13 +7,15 @@ interface DriveCardProps {
   onSelect: (drive: Drive) => void;
   onQuickLog: (drive: Drive) => void;
   onEdit: (drive: Drive) => void;
+  onPrint?: (drive: Drive) => void;
 }
 
 export const DriveCard: React.FC<DriveCardProps> = ({
   drive,
   onSelect,
   onQuickLog,
-  onEdit
+  onEdit,
+  onPrint
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -40,6 +42,12 @@ export const DriveCard: React.FC<DriveCardProps> = ({
   const capDisplay = drive.capacity_gb >= 1000 
     ? `${(drive.capacity_gb / 1000).toFixed(drive.capacity_gb % 1000 === 0 ? 0 : 1)} TB`
     : `${drive.capacity_gb} GB`;
+
+  const usableCapDisplay = drive.usable_capacity_gb 
+    ? (drive.usable_capacity_gb >= 1000 
+      ? `${(drive.usable_capacity_gb / 1000).toFixed(drive.usable_capacity_gb % 1000 === 0 ? 0 : 1)} TB`
+      : `${drive.usable_capacity_gb} GB`)
+    : null;
 
   // Warranty info
   const warranty = drive.warranty_info;
@@ -113,6 +121,12 @@ export const DriveCard: React.FC<DriveCardProps> = ({
                 {drive.status}
               </span>
             )}
+            {drive.location && (
+              <span className="text-xs px-2 py-0.5 rounded-md bg-slate-900 text-slate-300 font-mono border border-slate-700/80 flex items-center space-x-1">
+                <span className="w-1 h-1 rounded-full bg-sky-400"></span>
+                <span>{drive.location}</span>
+              </span>
+            )}
           </div>
           {healthBadge()}
         </div>
@@ -123,9 +137,16 @@ export const DriveCard: React.FC<DriveCardProps> = ({
             <h3 className="text-base font-semibold text-white group-hover:text-sky-300 transition-colors truncate" title={drive.model}>
               {drive.model}
             </h3>
-            <span className="text-lg font-bold text-sky-400 font-mono ml-2 shrink-0">
-              {capDisplay}
-            </span>
+            <div className="text-right shrink-0 ml-2">
+              <span className="text-lg font-bold text-sky-400 font-mono">
+                {capDisplay}
+              </span>
+              {usableCapDisplay && (
+                <div className="text-[10px] text-slate-400 font-mono">
+                  Usable: {usableCapDisplay}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Serial Number with quick copy */}
@@ -247,6 +268,17 @@ export const DriveCard: React.FC<DriveCardProps> = ({
         </span>
 
         <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
+          {onPrint && (
+            <button
+              id={`btn-print-${drive.id}`}
+              onClick={() => onPrint(drive)}
+              title="Print drive caddy / box label"
+              className="p-1 rounded bg-slate-700/60 hover:bg-emerald-600 hover:text-white text-slate-300 transition-colors"
+            >
+              <Printer className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           <button
             id={`btn-quicklog-${drive.id}`}
             onClick={() => onQuickLog(drive)}

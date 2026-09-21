@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   X, HardDrive, Calendar, Shield, DollarSign, FileText, Upload,
   Clock, Thermometer, Trash2, Edit2, AlertTriangle, CheckCircle2,
-  ExternalLink, ChevronDown, ChevronUp, Activity, Plus, RefreshCw, Check, TrendingUp
+  ExternalLink, ChevronDown, ChevronUp, Activity, Plus, RefreshCw, Check, TrendingUp, Printer
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, AreaChart, Area
@@ -19,6 +19,7 @@ interface DriveDetailModalProps {
   onDriveDeleted: (id: string) => void;
   onOpenQuickLog: (drive: Drive) => void;
   onViewReceipt: (receipt: DriveReceipt) => void;
+  onPrintLabel?: (drive: Drive) => void;
 }
 
 export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
@@ -28,7 +29,8 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
   onEdit,
   onDriveDeleted,
   onOpenQuickLog,
-  onViewReceipt
+  onViewReceipt,
+  onPrintLabel
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'trends' | 'logs' | 'receipts'>('overview');
   const [detail, setDetail] = useState<DriveDetail | null>(null);
@@ -194,6 +196,18 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
 
           {/* Quick top actions */}
           <div className="flex items-center space-x-2">
+            {detail && onPrintLabel && (
+              <button
+                id="btn-print-from-detail"
+                onClick={() => onPrintLabel(detail)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold shadow-sm transition-colors"
+                title="Print Caddy / Bay Label"
+              >
+                <Printer className="w-4 h-4 text-emerald-400" />
+                <span>Print Label</span>
+              </button>
+            )}
+
             {detail && (
               <button
                 onClick={() => onOpenQuickLog(detail)}
@@ -780,14 +794,48 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
                   </div>
 
                   {/* Section: Notes & Location */}
-                  {detail.notes && (
-                    <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60">
-                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1">
-                        Physical Notes & Storage Location
-                      </span>
-                      <p className="text-xs text-slate-300 leading-relaxed font-mono">
-                        {detail.notes}
-                      </p>
+                  {(detail.notes || detail.location || detail.usable_capacity_gb !== undefined) && (
+                    <div className="p-5 rounded-xl bg-slate-800/80 border border-slate-700/80 space-y-3">
+                      <h3 className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1.5">
+                        <HardDrive className="w-4 h-4 text-sky-400" />
+                        <span>Inventory & Physical Specifications</span>
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-mono">
+                        {detail.location && (
+                          <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60">
+                            <span className="text-slate-500 block text-[10px] uppercase font-sans">Physical Location</span>
+                            <span className="text-white font-bold text-sm mt-0.5 block">
+                              {detail.location}
+                            </span>
+                          </div>
+                        )}
+                        {detail.usable_capacity_gb && (
+                          <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60">
+                            <span className="text-slate-500 block text-[10px] uppercase font-sans">Usable Capacity</span>
+                            <span className="text-sky-300 font-bold text-sm mt-0.5 block">
+                              {detail.usable_capacity_gb >= 1000 
+                                ? `${(detail.usable_capacity_gb / 1000).toFixed(detail.usable_capacity_gb % 1000 === 0 ? 0 : 1)} TB`
+                                : `${detail.usable_capacity_gb} GB`}
+                            </span>
+                          </div>
+                        )}
+                        <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60">
+                          <span className="text-slate-500 block text-[10px] uppercase font-sans">Status / Availability</span>
+                          <span className={`font-bold text-sm mt-0.5 block ${detail.status === 'Replaced' ? 'text-purple-400' : 'text-emerald-400'}`}>
+                            {detail.status || 'Active'}
+                          </span>
+                        </div>
+                      </div>
+                      {detail.notes && (
+                        <div className="pt-2 border-t border-slate-700/60">
+                          <span className="text-[10px] uppercase font-sans font-semibold text-slate-400 tracking-wider block mb-1">
+                            Physical Notes & Info
+                          </span>
+                          <p className="text-xs text-slate-300 leading-relaxed font-mono">
+                            {detail.notes}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -822,6 +870,17 @@ export const DriveDetailModal: React.FC<DriveDetailModalProps> = ({
                     </div>
 
                     <div className="flex items-center space-x-3">
+                      {detail && onPrintLabel && (
+                        <button
+                          id="btn-print-from-detail-footer"
+                          onClick={() => onPrintLabel(detail)}
+                          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-colors"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Print Label</span>
+                        </button>
+                      )}
+
                       <button
                         onClick={() => {
                           onEdit(detail);
