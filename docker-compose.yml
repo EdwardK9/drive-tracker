@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  drive-tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drive-tracker
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - UPLOADS_DIR=/app/uploads
+    volumes:
+      - drive_tracker_data:/app/data
+      - drive_tracker_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/stats || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  drive_tracker_data:
+    name: drive_tracker_data
+  drive_tracker_uploads:
+    name: drive_tracker_uploads
